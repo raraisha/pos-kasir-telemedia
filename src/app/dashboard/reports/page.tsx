@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { collection, getDocs, query, orderBy, where, doc, getDoc } from "firebase/firestore";
 import { db } from "../../../config/firebase";
+import * as XLSX from "xlsx"; // <-- Import library XLSX
 
 interface Transaction {
   id: string;
@@ -21,14 +22,12 @@ interface Transaction {
 export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [storeName, setStoreName] = useState("NAMA TOKO ANDA"); // Untuk Header Laporan
+  const [storeName, setStoreName] = useState("NAMA TOKO ANDA"); 
   
-  // State Filter Waktu
   const [filterType, setFilterType] = useState<"hari-ini" | "minggu-ini" | "bulan-ini" | "kustom">("hari-ini");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
-  // Format Rupiah
   const formatRupiah = (number: number) => {
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
@@ -37,7 +36,6 @@ export default function ReportsPage() {
     }).format(number);
   };
 
-  // Format Tanggal
   const formatDate = (timestamp: any) => {
     if (!timestamp) return "-";
     const date = timestamp.toDate();
@@ -57,11 +55,9 @@ export default function ReportsPage() {
     return `${startDate} s/d ${endDate}`;
   };
 
-  // Ambil Data Berdasarkan Filter
   const fetchReportData = async () => {
     setLoading(true);
     try {
-      // Ambil nama toko untuk kop laporan
       const storeSnap = await getDoc(doc(db, "settings", "store_config"));
       if (storeSnap.exists() && storeSnap.data().storeName) {
         setStoreName(storeSnap.data().storeName);
@@ -69,7 +65,7 @@ export default function ReportsPage() {
 
       const now = new Date();
       let start: Date | null = null;
-      let end: Date | null = new Date(); // Sampai hari ini akhir
+      let end: Date | null = new Date(); 
 
       if (filterType === "hari-ini") {
         start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -80,7 +76,7 @@ export default function ReportsPage() {
       } else if (filterType === "kustom" && startDate && endDate) {
         start = new Date(startDate);
         end = new Date(endDate);
-        end.setHours(23, 59, 59); // Ambil sampai akhir hari tersebut
+        end.setHours(23, 59, 59); 
       }
 
       let txQuery;
@@ -116,7 +112,6 @@ export default function ReportsPage() {
     fetchReportData();
   }, [filterType, startDate, endDate]);
 
-  // Kalkulasi Ringkasan (Hanya hitung transaksi berhasil / bukan Void)
   const validTransactions = transactions.filter(t => t.status !== "Dibatalkan (Void)");
   const totalRevenue = validTransactions.reduce((acc, t) => acc + (t.total || 0), 0);
   const totalOrders = validTransactions.length;
@@ -127,11 +122,50 @@ export default function ReportsPage() {
     return acc;
   }, 0);
 
+  // ==========================================
+  // FUNGSI UNTUK EXPORT KE EXCEL (XLSX)
+  // ==========================================
+  const exportToExcel = () => {
+    // 1. Siapkan data baris per baris
+    const dataToExport = transactions.map((tx, idx) => ({
+      "No": idx + 1,
+      "Waktu Transaksi": formatDate(tx.timestamp),
+      "ID Transaksi": tx.transactionId || "-",
+      "Kasir": tx.kasir || "Kasir",
+      "Metode Bayar": tx.paymentMethod || "Tunai",
+      "Status": tx.status === "Dibatalkan (Void)" ? "VOID" : "Sukses",
+      "Subtotal (Rp)": tx.subTotal || 0,
+      "Pajak (Rp)": tx.tax || 0,
+      "Total Tagihan (Rp)": tx.total || 0,
+    }));
+
+    // 2. Buat worksheet dan workbook
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Penjualan");
+
+    // 3. Atur lebar kolom agar lebih rapi (opsional)
+    const columnWidths = [
+      { wch: 5 },  // No
+      { wch: 22 }, // Waktu Transaksi
+      { wch: 25 }, // ID Transaksi
+      { wch: 15 }, // Kasir
+      { wch: 15 }, // Metode
+      { wch: 10 }, // Status
+      { wch: 15 }, // Subtotal
+      { wch: 15 }, // Pajak
+      { wch: 18 }, // Total Tagihan
+    ];
+    worksheet["!cols"] = columnWidths;
+
+    // 4. Trigger download file
+    const safePeriode = getPeriodeCetak().replace(/\//g, "-"); // Hindari karakter invalid pada nama file
+    const fileName = `Rekap_Penjualan_${storeName.replace(/\s+/g, "_")}_${safePeriode}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  };
+
   return (
     <>
-      {/* ========================================================================= */}
-      {/* 1. TAMPILAN WEB NORMAL (Akan disembunyikan saat diprint via print:hidden) */}
-      {/* ========================================================================= */}
       <div className="space-y-6 font-sans print:hidden">
         
         {/* HEADER & FILTER */}
@@ -141,7 +175,6 @@ export default function ReportsPage() {
             <p className="text-sm text-zinc-500 mt-1">Analisis omzet, jumlah pesanan, dan rincian transaksi berdasarkan periode waktu.</p>
           </div>
 
-          {/* CONTROLS FILTER */}
           <div className="flex flex-wrap items-center gap-3">
             <select 
               value={filterType} 
@@ -172,12 +205,22 @@ export default function ReportsPage() {
               </div>
             )}
 
+            {/* TOMBOL CETAK PDF */}
             <button 
               onClick={() => window.print()}
-              disabled={loading}
+              disabled={loading || transactions.length === 0}
               className="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 text-white font-semibold text-sm rounded-xl shadow-sm transition-all flex items-center gap-2"
             >
-              🖨️ Cetak Laporan PDF
+              🖨️ PDF
+            </button>
+
+            {/* TOMBOL EXPORT EXCEL (BARU) */}
+            <button 
+              onClick={exportToExcel}
+              disabled={loading || transactions.length === 0}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold text-sm rounded-xl shadow-sm transition-all flex items-center gap-2"
+            >
+              📊 Export XLSX
             </button>
           </div>
         </div>
@@ -252,19 +295,13 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* 2. TAMPILAN KHUSUS PRINT (Tersembunyi di web, muncul full page di print) */}
-      {/* ========================================================================= */}
+      {/* TAMPILAN KHUSUS PRINT PDF (TETAP SAMA SEPERTI SEBELUMNYA) */}
       <div className="hidden print:block w-full bg-white text-black p-8 font-sans">
-        
-        {/* KOP LAPORAN */}
         <div className="text-center border-b-2 border-black pb-6 mb-6">
           <h1 className="text-3xl font-extrabold uppercase tracking-widest">{storeName}</h1>
           <h2 className="text-xl font-bold mt-2 text-zinc-700">LAPORAN REKAPITULASI PENJUALAN</h2>
           <p className="text-sm mt-1 font-medium text-zinc-600">Periode: {getPeriodeCetak()}</p>
         </div>
-
-        {/* SUMMARY (RINGKASAN) */}
         <div className="flex justify-between items-center bg-zinc-100 p-4 border border-zinc-300 rounded-lg mb-8">
           <div className="text-center flex-1 border-r border-zinc-300">
             <p className="text-xs font-bold uppercase text-zinc-500 mb-1">Total Omzet Bersih</p>
@@ -280,7 +317,6 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* TABEL FULL DATA */}
         <div className="mb-4">
           <h3 className="text-sm font-bold uppercase mb-3">Rincian Transaksi</h3>
           <table className="w-full text-left border-collapse text-[11px]">
@@ -324,14 +360,12 @@ export default function ReportsPage() {
           </table>
         </div>
 
-        {/* FOOTER TTD */}
         <div className="mt-12 flex justify-end">
           <div className="text-center">
             <p className="text-xs mb-16">Dicetak pada: {new Date().toLocaleString("id-ID")}</p>
             <p className="text-sm font-bold border-b border-black inline-block px-8 pb-1">Administrator</p>
           </div>
         </div>
-
       </div>
     </>
   );
