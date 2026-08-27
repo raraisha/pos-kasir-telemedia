@@ -25,12 +25,14 @@ interface ProductSales {
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   
-  // State Filter Waktu
+  // State Filter Waktu Dinamis
   const [timeRange, setTimeRange] = useState("hari-ini");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
   // States Data
   const [stats, setStats] = useState({
-    totalProductsSoldToday: 0, // <-- Diubah untuk menampung total produk terjual hari ini
+    totalProductsSoldToday: 0,
     totalRevenue: 0,
     totalTransactions: 0,
   });
@@ -62,10 +64,10 @@ export default function DashboardPage() {
     const fetchDashboardData = async () => {
       setLoading(true);
       try {
-        // 1. Ambil Transaksi Hari Ini Secara Spesifik untuk Kartu Statistik
         const now = new Date();
+
+        // 1. Ambil Produk Terjual "Hari Ini" Secara Statis (Tidak Terpengaruh Filter)
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        
         const todayQuery = query(
           collection(db, "transactions"),
           where("timestamp", ">=", startOfToday)
@@ -75,7 +77,6 @@ export default function DashboardPage() {
         let productsSoldTodayCount = 0;
         todaySnap.forEach((doc) => {
           const data = doc.data() as Transaction;
-          // Hanya hitung jika transaksi berhasil (tidak Void)
           if (data.status !== "Dibatalkan (Void)" && data.items && Array.isArray(data.items)) {
             data.items.forEach((item) => {
               productsSoldTodayCount += item.quantity || 0;
@@ -83,22 +84,39 @@ export default function DashboardPage() {
           }
         });
 
-        // 2. Tentukan Rentang Waktu untuk Filter Tabel & Grafik Utama
-        let startDate: Date | null = null;
+        // 2. Tentukan Rentang Waktu (Filter Utama Dashboard)
+        let start: Date | null = null;
+        let end: Date | null = new Date(); // Default end
+        
         if (timeRange === "hari-ini") {
-          startDate = startOfToday;
+          start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         } else if (timeRange === "minggu-ini") {
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+          start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
         } else if (timeRange === "bulan-ini") {
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          start = new Date(now.getFullYear(), now.getMonth(), 1);
+        } else if (timeRange === "kustom" && startDate && endDate) {
+          start = new Date(startDate);
+          start.setHours(0, 0, 0, 0); 
+          end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+        } else if (timeRange === "semua") {
+          start = null;
+          end = null;
         }
 
         // 3. Buat Query Firebase Berdasarkan Filter Waktu Pilihan
         let txQuery;
-        if (startDate) {
+        if (start && end) {
           txQuery = query(
             collection(db, "transactions"),
-            where("timestamp", ">=", startDate),
+            where("timestamp", ">=", start),
+            where("timestamp", "<=", end),
+            orderBy("timestamp", "desc")
+          );
+        } else if (start) {
+          txQuery = query(
+            collection(db, "transactions"),
+            where("timestamp", ">=", start),
             orderBy("timestamp", "desc")
           );
         } else {
@@ -142,11 +160,11 @@ export default function DashboardPage() {
 
         // Update semua State
         setStats({
-          totalProductsSoldToday: productsSoldTodayCount, // <-- Masukkan hasil hitung hari ini
+          totalProductsSoldToday: productsSoldTodayCount, 
           totalRevenue: revenue,
           totalTransactions: txCount, 
         });
-        setRecentTransactions(recentTx.slice(0, 5)); 
+        setRecentTransactions(recentTx.slice(0, 5)); // Ambil 5 teratas
         setTopProducts(sortedProducts);
 
       } catch (error) {
@@ -157,13 +175,13 @@ export default function DashboardPage() {
     };
 
     fetchDashboardData();
-  }, [timeRange]); 
+  }, [timeRange, startDate, endDate]); 
 
   return (
     <div className="space-y-8 font-sans">
       
-      {/* Header Halaman & Filter Waktu */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Header Halaman & Filter Waktu Dinamis */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Dashboard Admin</h1>
           <p className="text-sm text-zinc-500 mt-1">
@@ -172,18 +190,38 @@ export default function DashboardPage() {
         </div>
         
         {/* Dropdown Filter Range Waktu */}
-        <div className="flex items-center gap-3">
-          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Periode:</label>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider hidden sm:block">Periode:</label>
           <select 
             value={timeRange} 
             onChange={(e) => setTimeRange(e.target.value)}
-            className="px-4 py-2 bg-white border border-zinc-200 rounded-xl text-sm font-semibold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer shadow-sm"
+            className="px-4 py-2.5 bg-white border border-zinc-200 rounded-xl text-sm font-semibold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer shadow-sm"
           >
             <option value="hari-ini">Hari Ini</option>
             <option value="minggu-ini">7 Hari Terakhir</option>
             <option value="bulan-ini">Bulan Ini</option>
+            <option value="kustom">Pilih Tanggal Kustom</option>
             <option value="semua">Semua Waktu</option>
           </select>
+
+          {/* Muncul Jika Opsi "Pilih Tanggal Kustom" Dipilih */}
+          {timeRange === "kustom" && (
+            <div className="flex items-center gap-2">
+              <input 
+                type="date" 
+                value={startDate} 
+                onChange={(e) => setStartDate(e.target.value)} 
+                className="px-3 py-2 bg-white border border-zinc-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-zinc-400"
+              />
+              <span className="text-zinc-400 font-medium text-xs">s/d</span>
+              <input 
+                type="date" 
+                value={endDate} 
+                onChange={(e) => setEndDate(e.target.value)} 
+                className="px-3 py-2 bg-white border border-zinc-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-zinc-400"
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -213,10 +251,9 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* --- KARTU YANG DIGANTI MENJADI PENJUALAN PRODUK HARI INI --- */}
         <div className="bg-white border border-zinc-200 p-6 rounded-2xl shadow-sm">
           <div className="flex justify-between items-start mb-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Produk Terjual Hari Ini</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500" title="Tetap dihitung berdasarkan hari ini, terlepas dari filter waktu di atas.">Produk Terjual Hari Ini</p>
             <span className="p-2 bg-purple-50 text-purple-600 rounded-lg">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
             </span>
