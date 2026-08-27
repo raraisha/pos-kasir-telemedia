@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../../config/firebase";
+import { collection, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, setDoc } from "firebase/firestore";
+// Import tambahan untuk Auth dan App
+import { initializeApp } from "firebase/app";
+import { getAuth, createUserWithEmailAndPassword, signOut as signOutAuth } from "firebase/auth";
+import { db, app } from "../../../config/firebase"; // Pastikan 'app' diexport dari file firebase Anda
 
 // --- INTERFACE ---
 interface User {
@@ -26,7 +29,7 @@ export default function CashiersPage() {
   const [formData, setFormData] = useState({
     nama: "",
     email: "",
-    password: "", // Hanya dipakai saat tambah (UI dummy / untuk backend nanti)
+    password: "", 
     role: "kasir",
   });
 
@@ -71,7 +74,7 @@ export default function CashiersPage() {
   };
 
   const handleDelete = async (id: string, nama: string) => {
-    if (!confirm(`Yakin ingin menghapus akses untuk "${nama}"?`)) return;
+    if (!confirm(`Yakin ingin menghapus akses untuk "${nama}"? (Catatan: Ini akan mencabut akses POS, tapi akun loginnya masih ada di Auth)`)) return;
     
     try {
       await deleteDoc(doc(db, "users", id));
@@ -88,14 +91,28 @@ export default function CashiersPage() {
 
     try {
       if (editingId) {
-        // Mode Edit (Hanya update data di Firestore)
+        // Mode Edit (Hanya update data nama dan role di Firestore)
         const updateData = {
           nama: formData.nama,
           role: formData.role,
         };
         await updateDoc(doc(db, "users", editingId), updateData);
+        alert("Data berhasil diperbarui!");
       } else {
-        // Mode Tambah (Simpan ke koleksi Firestore)
+        // --- MODE TAMBAH (BUAT AUTH + FIRESTORE) ---
+        
+        // 1. Buat instance Firebase kedua agar sesi Admin tidak ter-logout
+        const secondaryApp = initializeApp(app.options, `SecondaryApp_${Date.now()}`);
+        const secondaryAuth = getAuth(secondaryApp);
+
+        // 2. Daftarkan email dan password ke Firebase Authentication
+        const userCredential = await createUserWithEmailAndPassword(secondaryAuth, formData.email, formData.password);
+        const newUid = userCredential.user.uid;
+
+        // 3. Logout (putuskan sesi) instance kedua agar bersih
+        await signOutAuth(secondaryAuth);
+
+        // 4. Simpan ke Firestore menggunakan setDoc (ID Dokumen = UID Auth)
         const newUserData = {
           nama: formData.nama,
           email: formData.email,
@@ -103,15 +120,25 @@ export default function CashiersPage() {
           status: "Aktif",
           createdAt: serverTimestamp(),
         };
-        await addDoc(collection(db, "users"), newUserData);
-        // Note: Idealnya di sini juga memanggil fungsi Firebase Admin API untuk create Auth User.
+        // Perhatikan kita pakai setDoc dengan doc() yang berisi newUid
+        await setDoc(doc(db, "users", newUid), newUserData);
+        
+        alert("Kasir baru berhasil didaftarkan dan bisa langsung Login!");
       }
       
       setIsModalOpen(false);
       fetchUsers(); // Refresh data tabel
-    } catch (error) {
+    } catch (error: any) {
       console.error("Gagal menyimpan:", error);
-      alert("Terjadi kesalahan saat menyimpan data.");
+      
+      // Memberikan pesan error yang lebih jelas jika gagal karena Auth
+      if (error.code === 'auth/email-already-in-use') {
+        alert("Gagal: Email ini sudah terdaftar sebelumnya.");
+      } else if (error.code === 'auth/weak-password') {
+        alert("Gagal: Password terlalu lemah (Minimal 6 karakter).");
+      } else {
+        alert("Terjadi kesalahan saat menyimpan data.");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -264,7 +291,7 @@ export default function CashiersPage() {
                 <select
                   value={formData.role}
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 focus:outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 transition-all appearance-none"
+                  className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 focus:outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 transition-all appearance-none cursor-pointer"
                 >
                   <option value="kasir">Kasir (Buka POS)</option>
                   <option value="admin">Administrator (Akses Dashboard)</option>
