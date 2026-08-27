@@ -22,6 +22,12 @@ interface ProductSales {
   revenue: number;
 }
 
+interface PaymentStats {
+  method: string;
+  count: number;
+  revenue: number;
+}
+
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   
@@ -36,8 +42,8 @@ export default function DashboardPage() {
     totalRevenue: 0,
     totalTransactions: 0,
   });
-  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [topProducts, setTopProducts] = useState<ProductSales[]>([]);
+  const [paymentStats, setPaymentStats] = useState<PaymentStats[]>([]);
 
   // Format Rupiah
   const formatRupiah = (number: number) => {
@@ -46,18 +52,6 @@ export default function DashboardPage() {
       currency: "IDR",
       minimumFractionDigits: 0,
     }).format(number);
-  };
-
-  // Format Tanggal
-  const formatDate = (timestamp: any) => {
-    if (!timestamp) return "-";
-    const date = timestamp.toDate();
-    return new Intl.DateTimeFormat("id-ID", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
   };
 
   useEffect(() => {
@@ -131,19 +125,18 @@ export default function DashboardPage() {
         let revenue = 0;
         let txCount = 0;
         const productSalesMap: Record<string, ProductSales> = {};
-        const recentTx: Transaction[] = [];
+        const paymentMap: Record<string, PaymentStats> = {};
 
         // 4. Proses Loop Transaksi Filtered
         transactionsSnap.forEach((doc) => {
           const data = doc.data() as Transaction;
           data.id = doc.id;
           
-          recentTx.push(data); 
-
           if (data.status !== "Dibatalkan (Void)") {
             revenue += data.total || 0;
             txCount++;
 
+            // Kalkulasi Produk Terjual
             if (data.items && Array.isArray(data.items)) {
               data.items.forEach((item) => {
                 if (!productSalesMap[item.id]) {
@@ -153,10 +146,19 @@ export default function DashboardPage() {
                 productSalesMap[item.id].revenue += (item.price * item.quantity);
               });
             }
+
+            // Kalkulasi Metode Pembayaran
+            const method = data.paymentMethod || "Tunai";
+            if (!paymentMap[method]) {
+              paymentMap[method] = { method: method, count: 0, revenue: 0 };
+            }
+            paymentMap[method].count += 1;
+            paymentMap[method].revenue += data.total || 0;
           }
         });
 
         const sortedProducts = Object.values(productSalesMap).sort((a, b) => b.qty - a.qty);
+        const sortedPayments = Object.values(paymentMap).sort((a, b) => b.revenue - a.revenue);
 
         // Update semua State
         setStats({
@@ -164,8 +166,8 @@ export default function DashboardPage() {
           totalRevenue: revenue,
           totalTransactions: txCount, 
         });
-        setRecentTransactions(recentTx.slice(0, 5)); // Ambil 5 teratas
         setTopProducts(sortedProducts);
+        setPaymentStats(sortedPayments);
 
       } catch (error) {
         console.error("Gagal memuat data dashboard:", error);
@@ -306,19 +308,19 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ================= Bagian Kanan: Transaksi Terakhir ================= */}
+        {/* ================= Bagian Kanan: Summary Metode Pembayaran ================= */}
         <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
           <div className="px-6 py-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
-            <h2 className="text-lg font-semibold text-zinc-900">5 Transaksi Terakhir</h2>
+            <h2 className="text-lg font-semibold text-zinc-900">Summary per Pembayaran</h2>
           </div>
           
           <div className="overflow-x-auto flex-1">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-white border-b border-zinc-100">
-                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Waktu / ID</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right">Total</th>
+                <tr className="bg-white border-b border-zinc-100 sticky top-0 z-10 shadow-sm">
+                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Metode</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-center">Trx</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right">Total Pendapatan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
@@ -326,29 +328,35 @@ export default function DashboardPage() {
                   <tr>
                     <td colSpan={3} className="px-6 py-8 text-center text-sm text-zinc-500">Memuat data...</td>
                   </tr>
-                ) : recentTransactions.length === 0 ? (
+                ) : paymentStats.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="px-6 py-8 text-center text-sm text-zinc-500">Belum ada transaksi.</td>
+                    <td colSpan={3} className="px-6 py-8 text-center text-sm text-zinc-500">Belum ada transaksi di periode ini.</td>
                   </tr>
                 ) : (
-                  recentTransactions.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-zinc-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <p className="text-sm text-zinc-900 font-medium">{formatDate(tx.timestamp)}</p>
-                        <p className="text-xs text-zinc-500 mt-1">{tx.transactionId}</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold ${
-                          tx.status === 'Dibatalkan (Void)' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
-                        }`}>
-                          {tx.status || 'Berhasil'}
-                        </span>
-                      </td>
-                      <td className={`px-6 py-4 text-sm font-bold text-right ${tx.status === 'Dibatalkan (Void)' ? 'text-zinc-400 line-through' : 'text-zinc-900'}`}>
-                        {formatRupiah(tx.total)}
-                      </td>
-                    </tr>
-                  ))
+                  paymentStats.map((payment, idx) => {
+                    // Beri warna background berbeda untuk tiap metode
+                    const badgeColor = 
+                      payment.method.toLowerCase().includes("qris") ? "bg-purple-50 text-purple-700 border-purple-200" :
+                      payment.method.toLowerCase().includes("tunai") ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                      payment.method.toLowerCase().includes("kartu") ? "bg-amber-50 text-amber-700 border-amber-200" :
+                      "bg-blue-50 text-blue-700 border-blue-200";
+
+                    return (
+                      <tr key={idx} className="hover:bg-zinc-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold border ${badgeColor}`}>
+                            {payment.method}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-zinc-600 text-center font-semibold">
+                          {payment.count}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-bold text-zinc-900 text-right">
+                          {formatRupiah(payment.revenue)}
+                        </td>
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
             </table>
