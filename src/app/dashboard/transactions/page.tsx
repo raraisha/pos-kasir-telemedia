@@ -31,7 +31,11 @@ interface Transaction {
 export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  
+  // State Filter Waktu
   const [timeRange, setTimeRange] = useState("hari-ini");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   
   // State untuk Detail Modal
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
@@ -62,22 +66,39 @@ export default function TransactionsPage() {
     const fetchTransactions = async () => {
       setLoading(true);
       try {
-        let startDate: Date | null = null;
+        let start: Date | null = null;
+        let end: Date | null = new Date(); // Default end batasnya adalah waktu saat ini
         const now = new Date();
         
         if (timeRange === "hari-ini") {
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         } else if (timeRange === "minggu-ini") {
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+          start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
         } else if (timeRange === "bulan-ini") {
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          start = new Date(now.getFullYear(), now.getMonth(), 1);
+        } else if (timeRange === "kustom" && startDate && endDate) {
+          start = new Date(startDate);
+          start.setHours(0, 0, 0, 0); // Mulai dari jam 00:00:00
+          
+          end = new Date(endDate);
+          end.setHours(23, 59, 59, 999); // Sampai ujung hari (23:59:59)
+        } else if (timeRange === "semua") {
+          start = null;
+          end = null;
         }
 
         let txQuery;
-        if (startDate) {
+        if (start && end) {
           txQuery = query(
             collection(db, "transactions"),
-            where("timestamp", ">=", startDate),
+            where("timestamp", ">=", start),
+            where("timestamp", "<=", end),
+            orderBy("timestamp", "desc")
+          );
+        } else if (start) {
+          txQuery = query(
+            collection(db, "transactions"),
+            where("timestamp", ">=", start),
             orderBy("timestamp", "desc")
           );
         } else {
@@ -102,20 +123,20 @@ export default function TransactionsPage() {
     };
 
     fetchTransactions();
-  }, [timeRange]);
+  }, [timeRange, startDate, endDate]); // Akan merefresh data jika range atau tanggal kustom berubah
 
   return (
     <div className="space-y-6 font-sans">
       
       {/* Header & Filter */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Riwayat Transaksi</h1>
           <p className="text-sm text-zinc-500 mt-1">Pantau semua aktivitas penjualan dan pembatalan (void).</p>
         </div>
         
-        <div className="flex items-center gap-3">
-          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Periode Waktu:</label>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider hidden sm:block">Periode:</label>
           <select 
             value={timeRange} 
             onChange={(e) => setTimeRange(e.target.value)}
@@ -124,8 +145,27 @@ export default function TransactionsPage() {
             <option value="hari-ini">Hari Ini</option>
             <option value="minggu-ini">7 Hari Terakhir</option>
             <option value="bulan-ini">Bulan Ini</option>
+            <option value="kustom">Pilih Tanggal Kustom</option>
             <option value="semua">Semua Waktu</option>
           </select>
+
+          {timeRange === "kustom" && (
+            <div className="flex items-center gap-2">
+              <input 
+                type="date" 
+                value={startDate} 
+                onChange={(e) => setStartDate(e.target.value)} 
+                className="px-3 py-2 bg-white border border-zinc-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-zinc-400"
+              />
+              <span className="text-zinc-400 font-medium text-xs">s/d</span>
+              <input 
+                type="date" 
+                value={endDate} 
+                onChange={(e) => setEndDate(e.target.value)} 
+                className="px-3 py-2 bg-white border border-zinc-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-zinc-400"
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -180,7 +220,7 @@ export default function TransactionsPage() {
                     <td className="px-6 py-4 text-center">
                       <button
                         onClick={() => setSelectedTx(tx)}
-                        className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold rounded-lg transition-colors"
+                        className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
                       >
                         Detail
                       </button>
@@ -261,7 +301,7 @@ export default function TransactionsPage() {
                   <span>{formatRupiah(selectedTx.subTotal)}</span>
                 </div>
                 <div className="flex justify-between text-zinc-600">
-                  <span>PPN (11%)</span>
+                  <span>PPN / Pajak</span>
                   <span>{formatRupiah(selectedTx.tax)}</span>
                 </div>
                 <div className="flex justify-between text-lg font-extrabold text-zinc-900 pt-2 border-t border-zinc-200 mt-2">

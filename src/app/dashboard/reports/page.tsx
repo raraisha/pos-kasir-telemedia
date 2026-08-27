@@ -1,9 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { collection, getDocs, query, orderBy, where, doc, getDoc } from "firebase/firestore";
 import { db } from "../../../config/firebase";
 import * as XLSX from "xlsx"; // <-- Import library XLSX
+
+// --- INTERFACES ---
+interface CartItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+}
 
 interface Transaction {
   id: string;
@@ -12,22 +20,29 @@ interface Transaction {
   subTotal: number;
   tax: number;
   paymentMethod: string;
+  cashReceived: number;
+  change: number;
   kasir: string;
   status?: string;
   timestamp: any;
-  dateString?: string;
-  items: any[];
+  items: CartItem[];
+  voidedAt?: any;
 }
 
-export default function ReportsPage() {
+export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [storeName, setStoreName] = useState("NAMA TOKO ANDA"); 
+  const [storeName, setStoreName] = useState("NAMA TOKO ANDA");
   
-  const [filterType, setFilterType] = useState<"hari-ini" | "minggu-ini" | "bulan-ini" | "kustom">("hari-ini");
+  // State Filter Waktu
+  const [timeRange, setTimeRange] = useState("hari-ini");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  
+  // State untuk Detail Modal
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
+  // Format Rupiah
   const formatRupiah = (number: number) => {
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
@@ -36,7 +51,8 @@ export default function ReportsPage() {
     }).format(number);
   };
 
-  const formatDate = (timestamp: any) => {
+  // Format Tanggal (Lengkap)
+  const formatDateTime = (timestamp: any) => {
     if (!timestamp) return "-";
     const date = timestamp.toDate();
     return new Intl.DateTimeFormat("id-ID", {
@@ -48,79 +64,83 @@ export default function ReportsPage() {
     }).format(date);
   };
 
-  const getPeriodeCetak = () => {
-    if (filterType === "hari-ini") return "Hari Ini";
-    if (filterType === "minggu-ini") return "7 Hari Terakhir";
-    if (filterType === "bulan-ini") return "Bulan Ini";
+  // Mendapatkan label periode untuk nama file export
+  const getPeriodeLabel = () => {
+    if (timeRange === "hari-ini") return "Hari Ini";
+    if (timeRange === "minggu-ini") return "7 Hari Terakhir";
+    if (timeRange === "bulan-ini") return "Bulan Ini";
+    if (timeRange === "semua") return "Semua Waktu";
     return `${startDate} s/d ${endDate}`;
   };
 
-  const fetchReportData = async () => {
-    setLoading(true);
-    try {
-      const storeSnap = await getDoc(doc(db, "settings", "store_config"));
-      if (storeSnap.exists() && storeSnap.data().storeName) {
-        setStoreName(storeSnap.data().storeName);
-      }
-
-      const now = new Date();
-      let start: Date | null = null;
-      let end: Date | null = new Date(); 
-
-      if (filterType === "hari-ini") {
-        start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      } else if (filterType === "minggu-ini") {
-        start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
-      } else if (filterType === "bulan-ini") {
-        start = new Date(now.getFullYear(), now.getMonth(), 1);
-      } else if (filterType === "kustom" && startDate && endDate) {
-        start = new Date(startDate);
-        end = new Date(endDate);
-        end.setHours(23, 59, 59); 
-      }
-
-      let txQuery;
-      if (start) {
-        txQuery = query(
-          collection(db, "transactions"),
-          where("timestamp", ">=", start),
-          where("timestamp", "<=", end || now),
-          orderBy("timestamp", "desc")
-        );
-      } else {
-        txQuery = query(
-          collection(db, "transactions"),
-          orderBy("timestamp", "desc")
-        );
-      }
-
-      const querySnapshot = await getDocs(txQuery);
-      const data = querySnapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      })) as Transaction[];
-
-      setTransactions(data);
-    } catch (error) {
-      console.error("Gagal memuat laporan:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchReportData();
-  }, [filterType, startDate, endDate]);
+    const fetchTransactions = async () => {
+      setLoading(true);
+      try {
+        // Ambil nama toko untuk nama file export
+        const storeSnap = await getDoc(doc(db, "settings", "store_config"));
+        if (storeSnap.exists() && storeSnap.data().storeName) {
+          setStoreName(storeSnap.data().storeName);
+        }
 
-  const validTransactions = transactions.filter(t => t.status !== "Dibatalkan (Void)");
-  const totalRevenue = validTransactions.reduce((acc, t) => acc + (t.total || 0), 0);
-  const totalOrders = validTransactions.length;
-  const totalItemsSold = validTransactions.reduce((acc, t) => {
-    if (t.items && Array.isArray(t.items)) {
-      return acc + t.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
-    }
-    return acc;
-  }, 0);
+        let start: Date | null = null;
+        let end: Date | null = new Date(); // Default end batasnya adalah waktu saat ini
+        const now = new Date();
+        
+        if (timeRange === "hari-ini") {
+          start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        } else if (timeRange === "minggu-ini") {
+          start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+        } else if (timeRange === "bulan-ini") {
+          start = new Date(now.getFullYear(), now.getMonth(), 1);
+        } else if (timeRange === "kustom" && startDate && endDate) {
+          start = new Date(startDate);
+          start.setHours(0, 0, 0, 0); // Mulai dari jam 00:00:00
+          
+          end = new Date(endDate);
+          end.setHours(23, 59, 59, 999); // Sampai ujung hari (23:59:59)
+        } else if (timeRange === "semua") {
+          start = null;
+          end = null;
+        }
+
+        let txQuery;
+        if (start && end) {
+          txQuery = query(
+            collection(db, "transactions"),
+            where("timestamp", ">=", start),
+            where("timestamp", "<=", end),
+            orderBy("timestamp", "desc")
+          );
+        } else if (start) {
+          txQuery = query(
+            collection(db, "transactions"),
+            where("timestamp", ">=", start),
+            orderBy("timestamp", "desc")
+          );
+        } else {
+          txQuery = query(
+            collection(db, "transactions"),
+            orderBy("timestamp", "desc")
+          );
+        }
+
+        const querySnapshot = await getDocs(txQuery);
+        const data = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Transaction[];
+        
+        setTransactions(data);
+      } catch (error) {
+        console.error("Gagal memuat data transaksi:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTransactions();
+  }, [timeRange, startDate, endDate]); // Akan merefresh data jika range atau tanggal kustom berubah
 
   // ==========================================
   // FUNGSI UNTUK EXPORT KE EXCEL (XLSX)
@@ -129,22 +149,25 @@ export default function ReportsPage() {
     // 1. Siapkan data baris per baris
     const dataToExport = transactions.map((tx, idx) => ({
       "No": idx + 1,
-      "Waktu Transaksi": formatDate(tx.timestamp),
-      "ID Transaksi": tx.transactionId || "-",
+      "Waktu Transaksi": formatDateTime(tx.timestamp),
+      "ID Transaksi": tx.transactionId || tx.id,
       "Kasir": tx.kasir || "Kasir",
       "Metode Bayar": tx.paymentMethod || "Tunai",
       "Status": tx.status === "Dibatalkan (Void)" ? "VOID" : "Sukses",
+      "Waktu Void": tx.voidedAt ? formatDateTime(tx.voidedAt) : "-",
       "Subtotal (Rp)": tx.subTotal || 0,
       "Pajak (Rp)": tx.tax || 0,
       "Total Tagihan (Rp)": tx.total || 0,
+      "Uang Diterima (Rp)": tx.cashReceived || 0,
+      "Kembalian (Rp)": tx.change || 0,
     }));
 
     // 2. Buat worksheet dan workbook
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Penjualan");
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Riwayat Transaksi");
 
-    // 3. Atur lebar kolom agar lebih rapi (opsional)
+    // 3. Atur lebar kolom agar lebih rapi di Excel
     const columnWidths = [
       { wch: 5 },  // No
       { wch: 22 }, // Waktu Transaksi
@@ -152,221 +175,242 @@ export default function ReportsPage() {
       { wch: 15 }, // Kasir
       { wch: 15 }, // Metode
       { wch: 10 }, // Status
+      { wch: 20 }, // Waktu Void
       { wch: 15 }, // Subtotal
       { wch: 15 }, // Pajak
       { wch: 18 }, // Total Tagihan
+      { wch: 18 }, // Uang Diterima
+      { wch: 15 }, // Kembalian
     ];
     worksheet["!cols"] = columnWidths;
 
     // 4. Trigger download file
-    const safePeriode = getPeriodeCetak().replace(/\//g, "-"); // Hindari karakter invalid pada nama file
-    const fileName = `Rekap_Penjualan_${storeName.replace(/\s+/g, "_")}_${safePeriode}.xlsx`;
+    const safePeriode = getPeriodeLabel().replace(/\//g, "-"); 
+    const fileName = `Riwayat_Transaksi_${storeName.replace(/\s+/g, "_")}_${safePeriode}.xlsx`;
     XLSX.writeFile(workbook, fileName);
   };
 
   return (
-    <>
-      <div className="space-y-6 font-sans print:hidden">
+    <div className="space-y-6 font-sans">
+      
+      {/* Header & Filter */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Riwayat Transaksi</h1>
+          <p className="text-sm text-zinc-500 mt-1">Pantau semua aktivitas penjualan dan pembatalan (void).</p>
+        </div>
         
-        {/* HEADER & FILTER */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Rekapitulasi Laporan Penjualan</h1>
-            <p className="text-sm text-zinc-500 mt-1">Analisis omzet, jumlah pesanan, dan rincian transaksi berdasarkan periode waktu.</p>
-          </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider hidden sm:block">Periode:</label>
+          <select 
+            value={timeRange} 
+            onChange={(e) => setTimeRange(e.target.value)}
+            className="px-4 py-2.5 bg-white border border-zinc-200 rounded-xl text-sm font-semibold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer shadow-sm"
+          >
+            <option value="hari-ini">Hari Ini</option>
+            <option value="minggu-ini">7 Hari Terakhir</option>
+            <option value="bulan-ini">Bulan Ini</option>
+            <option value="kustom">Pilih Tanggal Kustom</option>
+            <option value="semua">Semua Waktu</option>
+          </select>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <select 
-              value={filterType} 
-              onChange={(e) => setFilterType(e.target.value as any)}
-              className="px-4 py-2.5 bg-white border border-zinc-200 rounded-xl text-sm font-semibold text-zinc-800 shadow-sm focus:outline-none cursor-pointer"
-            >
-              <option value="hari-ini">Hari Ini</option>
-              <option value="minggu-ini">7 Hari Terakhir</option>
-              <option value="bulan-ini">Bulan Ini</option>
-              <option value="kustom">Rentang Waktu Kustom</option>
-            </select>
+          {timeRange === "kustom" && (
+            <div className="flex items-center gap-2">
+              <input 
+                type="date" 
+                value={startDate} 
+                onChange={(e) => setStartDate(e.target.value)} 
+                className="px-3 py-2 bg-white border border-zinc-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-zinc-400"
+              />
+              <span className="text-zinc-400 font-medium text-xs">s/d</span>
+              <input 
+                type="date" 
+                value={endDate} 
+                onChange={(e) => setEndDate(e.target.value)} 
+                className="px-3 py-2 bg-white border border-zinc-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-zinc-400"
+              />
+            </div>
+          )}
 
-            {filterType === "kustom" && (
-              <div className="flex items-center gap-2">
-                <input 
-                  type="date" 
-                  value={startDate} 
-                  onChange={(e) => setStartDate(e.target.value)} 
-                  className="px-3 py-2 bg-white border border-zinc-200 rounded-xl text-xs font-semibold"
-                />
-                <span className="text-zinc-400">s/d</span>
-                <input 
-                  type="date" 
-                  value={endDate} 
-                  onChange={(e) => setEndDate(e.target.value)} 
-                  className="px-3 py-2 bg-white border border-zinc-200 rounded-xl text-xs font-semibold"
-                />
-              </div>
-            )}
-
-            {/* TOMBOL CETAK PDF */}
-            <button 
-              onClick={() => window.print()}
-              disabled={loading || transactions.length === 0}
-              className="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 text-white font-semibold text-sm rounded-xl shadow-sm transition-all flex items-center gap-2"
-            >
-              🖨️ PDF
-            </button>
-
-            {/* TOMBOL EXPORT EXCEL (BARU) */}
-            <button 
-              onClick={exportToExcel}
-              disabled={loading || transactions.length === 0}
-              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold text-sm rounded-xl shadow-sm transition-all flex items-center gap-2"
-            >
-              📊 Export XLSX
-            </button>
-          </div>
-        </div>
-
-        {/* KARTU RINGKASAN STATISTIK */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          <div className="bg-white border border-zinc-200 p-6 rounded-2xl shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-1">Total Omzet (Pendapatan)</p>
-            <p className="text-3xl font-extrabold text-emerald-600">{loading ? "..." : formatRupiah(totalRevenue)}</p>
-          </div>
-          <div className="bg-white border border-zinc-200 p-6 rounded-2xl shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-1">Total Transaksi Sukses</p>
-            <p className="text-3xl font-extrabold text-blue-600">{loading ? "..." : totalOrders} <span className="text-sm font-medium text-zinc-400">order</span></p>
-          </div>
-          <div className="bg-white border border-zinc-200 p-6 rounded-2xl shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-1">Produk Terjual</p>
-            <p className="text-3xl font-extrabold text-purple-600">{loading ? "..." : totalItemsSold} <span className="text-sm font-medium text-zinc-400">item</span></p>
-          </div>
-        </div>
-
-        {/* TABEL RINCIAN TRANSAKSI (UI WEB) */}
-        <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-zinc-100 bg-zinc-50/50">
-            <h2 className="font-bold text-zinc-900 text-sm">Daftar Transaksi Periode Ini ({transactions.length})</h2>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-zinc-100 bg-zinc-50/30 text-zinc-500 uppercase font-semibold">
-                  <th className="px-6 py-3.5">ID Transaksi / Waktu</th>
-                  <th className="px-6 py-3.5">Kasir</th>
-                  <th className="px-6 py-3.5">Metode Bayar</th>
-                  <th className="px-6 py-3.5">Status</th>
-                  <th className="px-6 py-3.5 text-right">Total Tagihan</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {loading ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-zinc-500">Memuat rekapitulasi data...</td>
-                  </tr>
-                ) : transactions.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-zinc-500">Tidak ada transaksi pada periode ini.</td>
-                  </tr>
-                ) : (
-                  transactions.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-zinc-50 transition-colors">
-                      <td className="px-6 py-3.5">
-                        <p className="font-bold text-zinc-900">{tx.transactionId || "TRX-UNKNOWN"}</p>
-                        <p className="text-[11px] text-zinc-400">{formatDate(tx.timestamp)}</p>
-                      </td>
-                      <td className="px-6 py-3.5 font-semibold text-zinc-700 uppercase">{tx.kasir || "Kasir"}</td>
-                      <td className="px-6 py-3.5 text-zinc-600 font-medium">{tx.paymentMethod || "Tunai"}</td>
-                      <td className="px-6 py-3.5">
-                        <span className={`px-2 py-1 rounded-md font-bold text-[10px] ${
-                          tx.status === 'Dibatalkan (Void)' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
-                        }`}>
-                          {tx.status || 'Berhasil'}
-                        </span>
-                      </td>
-                      <td className={`px-6 py-3.5 text-right font-extrabold text-sm ${tx.status === 'Dibatalkan (Void)' ? 'text-zinc-300 line-through' : 'text-zinc-900'}`}>
-                        {formatRupiah(tx.total)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          {/* TOMBOL EXPORT EXCEL */}
+          <button 
+            onClick={exportToExcel}
+            disabled={loading || transactions.length === 0}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold text-sm rounded-xl shadow-sm transition-all flex items-center gap-2"
+          >
+            📊 Export XLSX
+          </button>
         </div>
       </div>
 
-      {/* TAMPILAN KHUSUS PRINT PDF (TETAP SAMA SEPERTI SEBELUMNYA) */}
-      <div className="hidden print:block w-full bg-white text-black p-8 font-sans">
-        <div className="text-center border-b-2 border-black pb-6 mb-6">
-          <h1 className="text-3xl font-extrabold uppercase tracking-widest">{storeName}</h1>
-          <h2 className="text-xl font-bold mt-2 text-zinc-700">LAPORAN REKAPITULASI PENJUALAN</h2>
-          <p className="text-sm mt-1 font-medium text-zinc-600">Periode: {getPeriodeCetak()}</p>
-        </div>
-        <div className="flex justify-between items-center bg-zinc-100 p-4 border border-zinc-300 rounded-lg mb-8">
-          <div className="text-center flex-1 border-r border-zinc-300">
-            <p className="text-xs font-bold uppercase text-zinc-500 mb-1">Total Omzet Bersih</p>
-            <p className="text-xl font-extrabold text-black">{formatRupiah(totalRevenue)}</p>
-          </div>
-          <div className="text-center flex-1 border-r border-zinc-300">
-            <p className="text-xs font-bold uppercase text-zinc-500 mb-1">Total Transaksi</p>
-            <p className="text-xl font-extrabold text-black">{totalOrders} <span className="text-sm font-normal">Order</span></p>
-          </div>
-          <div className="text-center flex-1">
-            <p className="text-xs font-bold uppercase text-zinc-500 mb-1">Produk Terjual</p>
-            <p className="text-xl font-extrabold text-black">{totalItemsSold} <span className="text-sm font-normal">Item</span></p>
-          </div>
-        </div>
-
-        <div className="mb-4">
-          <h3 className="text-sm font-bold uppercase mb-3">Rincian Transaksi</h3>
-          <table className="w-full text-left border-collapse text-[11px]">
+      {/* Tabel Transaksi */}
+      <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-y-2 border-black">
-                <th className="py-2 px-2">No</th>
-                <th className="py-2 px-2">Waktu Transaksi</th>
-                <th className="py-2 px-2">ID Transaksi</th>
-                <th className="py-2 px-2">Kasir</th>
-                <th className="py-2 px-2">Metode</th>
-                <th className="py-2 px-2">Status</th>
-                <th className="py-2 px-2 text-right">Subtotal</th>
-                <th className="py-2 px-2 text-right">Pajak</th>
-                <th className="py-2 px-2 text-right">Total Tagihan</th>
+              <tr className="bg-zinc-50/50 border-b border-zinc-100">
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Waktu & ID</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Kasir</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Metode</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right">Total (Rp)</th>
+                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-center">Aksi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-200">
-              {transactions.length === 0 ? (
+            <tbody className="divide-y divide-zinc-100">
+              {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-4 text-center text-zinc-500 italic">Tidak ada transaksi pada periode ini.</td>
+                  <td colSpan={6} className="px-6 py-10 text-center text-sm text-zinc-500">Memuat data transaksi...</td>
+                </tr>
+              ) : transactions.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-10 text-center text-sm text-zinc-500">Belum ada transaksi di periode ini.</td>
                 </tr>
               ) : (
-                transactions.map((tx, idx) => {
-                  const isVoid = tx.status === "Dibatalkan (Void)";
-                  return (
-                    <tr key={tx.id} className={isVoid ? "text-zinc-400" : "text-black"}>
-                      <td className="py-2 px-2">{idx + 1}</td>
-                      <td className="py-2 px-2">{formatDate(tx.timestamp)}</td>
-                      <td className="py-2 px-2 font-mono">{tx.transactionId || "-"}</td>
-                      <td className="py-2 px-2">{tx.kasir}</td>
-                      <td className="py-2 px-2">{tx.paymentMethod}</td>
-                      <td className="py-2 px-2 font-bold">{isVoid ? "VOID" : "Sukses"}</td>
-                      <td className={`py-2 px-2 text-right ${isVoid ? "line-through" : ""}`}>{formatRupiah(tx.subTotal || 0)}</td>
-                      <td className={`py-2 px-2 text-right ${isVoid ? "line-through" : ""}`}>{formatRupiah(tx.tax || 0)}</td>
-                      <td className={`py-2 px-2 text-right font-bold ${isVoid ? "line-through" : ""}`}>{formatRupiah(tx.total)}</td>
-                    </tr>
-                  )
-                })
+                transactions.map((tx) => (
+                  <tr key={tx.id} className="hover:bg-zinc-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-semibold text-zinc-900">{formatDateTime(tx.timestamp)}</p>
+                      <p className="text-xs text-zinc-500 mt-0.5">{tx.transactionId || tx.id}</p>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-zinc-700">{tx.kasir}</td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold ${
+                        tx.paymentMethod === 'Tunai' ? 'bg-zinc-100 text-zinc-700' : 'bg-blue-50 text-blue-700'
+                      }`}>
+                        {tx.paymentMethod}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold ${
+                        tx.status === 'Dibatalkan (Void)' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'
+                      }`}>
+                        {tx.status || 'Berhasil'}
+                      </span>
+                    </td>
+                    <td className={`px-6 py-4 text-sm font-bold text-right ${tx.status === 'Dibatalkan (Void)' ? 'text-zinc-400 line-through' : 'text-zinc-900'}`}>
+                      {formatRupiah(tx.total)}
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <button
+                        onClick={() => setSelectedTx(tx)}
+                        className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
+                      >
+                        Detail
+                      </button>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
         </div>
+      </div>
 
-        <div className="mt-12 flex justify-end">
-          <div className="text-center">
-            <p className="text-xs mb-16">Dicetak pada: {new Date().toLocaleString("id-ID")}</p>
-            <p className="text-sm font-bold border-b border-black inline-block px-8 pb-1">Administrator</p>
+      {/* --- MODAL DETAIL TRANSAKSI --- */}
+      {selectedTx && (
+        <div className="fixed inset-0 bg-zinc-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            
+            <div className="px-6 py-5 border-b border-zinc-100 flex justify-between items-start bg-zinc-50/50">
+              <div>
+                <h2 className="text-lg font-bold text-zinc-900">Detail Transaksi</h2>
+                <p className="text-xs font-mono text-zinc-500 mt-1">{selectedTx.transactionId || selectedTx.id}</p>
+              </div>
+              <button onClick={() => setSelectedTx(null)} className="text-zinc-400 hover:text-zinc-700 p-1">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              {/* Info Status Void (Jika ada) */}
+              {selectedTx.status === "Dibatalkan (Void)" && (
+                <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl text-sm">
+                  <p className="font-bold text-red-800 flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                    Transaksi Telah Dibatalkan
+                  </p>
+                  <p className="text-red-600 mt-1">Dibatalkan pada: {formatDateTime(selectedTx.voidedAt)}</p>
+                </div>
+              )}
+
+              {/* Grid Info */}
+              <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+                <div>
+                  <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">Waktu Pembelian</p>
+                  <p className="font-semibold text-zinc-900">{formatDateTime(selectedTx.timestamp)}</p>
+                </div>
+                <div>
+                  <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">Kasir Bertugas</p>
+                  <p className="font-semibold text-zinc-900">{selectedTx.kasir}</p>
+                </div>
+                <div>
+                  <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">Metode Bayar</p>
+                  <p className="font-semibold text-zinc-900">{selectedTx.paymentMethod}</p>
+                </div>
+                <div>
+                  <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">Status</p>
+                  <p className="font-semibold text-zinc-900">{selectedTx.status || "Berhasil"}</p>
+                </div>
+              </div>
+
+              {/* Rincian Barang */}
+              <h3 className="text-xs font-bold text-zinc-900 uppercase tracking-wider mb-3 border-b border-zinc-100 pb-2">Rincian Pembelian</h3>
+              <div className="space-y-3 mb-6">
+                {selectedTx.items?.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center text-sm">
+                    <div>
+                      <p className="font-semibold text-zinc-900">{item.name}</p>
+                      <p className="text-zinc-500 text-xs">{item.quantity} x {formatRupiah(item.price)}</p>
+                    </div>
+                    <p className="font-bold text-zinc-900">{formatRupiah(item.price * item.quantity)}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Total Kalkulasi */}
+              <div className="bg-zinc-50 p-4 rounded-xl space-y-2 text-sm border border-zinc-100">
+                <div className="flex justify-between text-zinc-600">
+                  <span>Subtotal</span>
+                  <span>{formatRupiah(selectedTx.subTotal)}</span>
+                </div>
+                <div className="flex justify-between text-zinc-600">
+                  <span>PPN / Pajak</span>
+                  <span>{formatRupiah(selectedTx.tax)}</span>
+                </div>
+                <div className="flex justify-between text-lg font-extrabold text-zinc-900 pt-2 border-t border-zinc-200 mt-2">
+                  <span>Total Akhir</span>
+                  <span>{formatRupiah(selectedTx.total)}</span>
+                </div>
+                
+                {selectedTx.paymentMethod === "Tunai" && (
+                  <>
+                    <div className="flex justify-between text-zinc-500 pt-2 mt-2 border-t border-zinc-200 border-dashed">
+                      <span>Uang Diterima</span>
+                      <span>{formatRupiah(selectedTx.cashReceived)}</span>
+                    </div>
+                    <div className="flex justify-between text-zinc-500">
+                      <span>Kembalian</span>
+                      <span>{formatRupiah(selectedTx.change)}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-zinc-100">
+              <button 
+                onClick={() => setSelectedTx(null)}
+                className="w-full py-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold rounded-xl transition-all"
+              >
+                Tutup Detail
+              </button>
+            </div>
+
           </div>
         </div>
-      </div>
-    </>
+      )}
+
+    </div>
   );
 }
