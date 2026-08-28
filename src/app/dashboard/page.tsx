@@ -180,47 +180,49 @@ export default function DashboardPage() {
   }, [timeRange, startDate, endDate]); 
 
   return (
-    <div className="space-y-8 font-sans">
+    <div className="space-y-6 sm:space-y-8 font-sans pb-10">
       
       {/* Header Halaman & Filter Waktu Dinamis */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Dashboard Admin</h1>
-          <p className="text-sm text-zinc-500 mt-1">
+          <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">Dashboard Admin</h1>
+          <p className="text-xs sm:text-sm text-zinc-500 mt-1">
             Ringkasan performa toko dan aktivitas transaksi.
           </p>
         </div>
         
         {/* Dropdown Filter Range Waktu */}
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider hidden sm:block">Periode:</label>
-          <select 
-            value={timeRange} 
-            onChange={(e) => setTimeRange(e.target.value)}
-            className="px-4 py-2.5 bg-white border border-zinc-200 rounded-xl text-sm font-semibold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer shadow-sm"
-          >
-            <option value="hari-ini">Hari Ini</option>
-            <option value="minggu-ini">7 Hari Terakhir</option>
-            <option value="bulan-ini">Bulan Ini</option>
-            <option value="kustom">Pilih Tanggal Kustom</option>
-            <option value="semua">Semua Waktu</option>
-          </select>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full md:w-auto">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider hidden md:block">Periode:</label>
+            <select 
+              value={timeRange} 
+              onChange={(e) => setTimeRange(e.target.value)}
+              className="w-full sm:w-auto px-4 py-2.5 bg-white border border-zinc-200 rounded-xl text-sm font-semibold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer shadow-sm"
+            >
+              <option value="hari-ini">Hari Ini</option>
+              <option value="minggu-ini">7 Hari Terakhir</option>
+              <option value="bulan-ini">Bulan Ini</option>
+              <option value="kustom">Pilih Tanggal Kustom</option>
+              <option value="semua">Semua Waktu</option>
+            </select>
+          </div>
 
           {/* Muncul Jika Opsi "Pilih Tanggal Kustom" Dipilih */}
           {timeRange === "kustom" && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-row items-center gap-2 w-full sm:w-auto">
               <input 
                 type="date" 
                 value={startDate} 
                 onChange={(e) => setStartDate(e.target.value)} 
-                className="px-3 py-2 bg-white border border-zinc-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-zinc-400"
+                className="w-full sm:w-auto px-3 py-2 bg-white border border-zinc-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-zinc-400"
               />
               <span className="text-zinc-400 font-medium text-xs">s/d</span>
               <input 
                 type="date" 
                 value={endDate} 
                 onChange={(e) => setEndDate(e.target.value)} 
-                className="px-3 py-2 bg-white border border-zinc-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-zinc-400"
+                className="w-full sm:w-auto px-3 py-2 bg-white border border-zinc-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-zinc-400"
               />
             </div>
           )}
@@ -228,78 +230,78 @@ export default function DashboardPage() {
       </div>
 
       {/* Grid Statistik Kartu */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-        <div className="bg-white border border-zinc-200 p-6 rounded-2xl shadow-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+        <div className="bg-white border border-zinc-200 p-5 sm:p-6 rounded-2xl shadow-sm">
           <div className="flex justify-between items-start mb-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Pendapatan Bersih</p>
+            <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-zinc-500">Pendapatan Bersih</p>
             <span className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             </span>
           </div>
-          <p className="text-2xl font-bold text-zinc-900">
+          <p className="text-xl sm:text-2xl font-bold text-zinc-900 truncate">
             {loading ? "..." : formatRupiah(stats.totalRevenue)}
           </p>
         </div>
 
-        <div className="bg-white border border-zinc-200 p-6 rounded-2xl shadow-sm">
+        <div className="bg-white border border-zinc-200 p-5 sm:p-6 rounded-2xl shadow-sm">
           <div className="flex justify-between items-start mb-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Transaksi Sukses</p>
+            <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-zinc-500">Transaksi Sukses</p>
             <span className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
             </span>
           </div>
-          <p className="text-2xl font-bold text-zinc-900">
-            {loading ? "..." : stats.totalTransactions} <span className="text-sm font-medium text-zinc-400">order</span>
+          <p className="text-xl sm:text-2xl font-bold text-zinc-900">
+            {loading ? "..." : stats.totalTransactions} <span className="text-xs sm:text-sm font-medium text-zinc-400">order</span>
           </p>
         </div>
 
-        <div className="bg-white border border-zinc-200 p-6 rounded-2xl shadow-sm">
+        <div className="bg-white border border-zinc-200 p-5 sm:p-6 rounded-2xl shadow-sm sm:col-span-2 lg:col-span-1">
           <div className="flex justify-between items-start mb-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500" title="Tetap dihitung berdasarkan hari ini, terlepas dari filter waktu di atas.">Produk Terjual Hari Ini</p>
+            <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-zinc-500" title="Tetap dihitung berdasarkan hari ini, terlepas dari filter waktu di atas.">Produk Terjual Hari Ini</p>
             <span className="p-2 bg-purple-50 text-purple-600 rounded-lg">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
             </span>
           </div>
-          <p className="text-2xl font-bold text-zinc-900">
-            {loading ? "..." : stats.totalProductsSoldToday} <span className="text-sm font-medium text-zinc-400">item</span>
+          <p className="text-xl sm:text-2xl font-bold text-zinc-900">
+            {loading ? "..." : stats.totalProductsSoldToday} <span className="text-xs sm:text-sm font-medium text-zinc-400">item</span>
           </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6">
         
         {/* ================= Bagian Kiri: Tabel Penjualan Produk ================= */}
         <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
-          <div className="px-6 py-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
-            <h2 className="text-lg font-semibold text-zinc-900">Summary Penjualan Produk</h2>
+          <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
+            <h2 className="text-base sm:text-lg font-semibold text-zinc-900">Summary Penjualan Produk</h2>
           </div>
           
           <div className="overflow-x-auto flex-1 max-h-[400px]">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse min-w-[400px]">
               <thead>
                 <tr className="bg-white border-b border-zinc-100 sticky top-0 z-10 shadow-sm">
-                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Nama Produk</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-center">Terjual</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right">Pendapatan</th>
+                  <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider whitespace-nowrap">Nama Produk</th>
+                  <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider text-center whitespace-nowrap">Terjual</th>
+                  <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right whitespace-nowrap">Pendapatan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={3} className="px-6 py-8 text-center text-sm text-zinc-500">Memuat data...</td>
+                    <td colSpan={3} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Memuat data...</td>
                   </tr>
                 ) : topProducts.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="px-6 py-8 text-center text-sm text-zinc-500">Belum ada penjualan di periode ini.</td>
+                    <td colSpan={3} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Belum ada penjualan di periode ini.</td>
                   </tr>
                 ) : (
                   topProducts.map((product, idx) => (
                     <tr key={idx} className="hover:bg-zinc-50 transition-colors">
-                      <td className="px-6 py-4 text-sm font-semibold text-zinc-900">{product.name}</td>
-                      <td className="px-6 py-4 text-sm text-zinc-600 text-center">
+                      <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm font-semibold text-zinc-900">{product.name}</td>
+                      <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm text-zinc-600 text-center">
                         <span className="bg-blue-50 text-blue-700 font-bold px-2.5 py-1 rounded-md">{product.qty}</span>
                       </td>
-                      <td className="px-6 py-4 text-sm font-bold text-zinc-900 text-right">{formatRupiah(product.revenue)}</td>
+                      <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm font-bold text-zinc-900 text-right whitespace-nowrap">{formatRupiah(product.revenue)}</td>
                     </tr>
                   ))
                 )}
@@ -310,31 +312,30 @@ export default function DashboardPage() {
 
         {/* ================= Bagian Kanan: Summary Metode Pembayaran ================= */}
         <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
-          <div className="px-6 py-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
-            <h2 className="text-lg font-semibold text-zinc-900">Summary per Pembayaran</h2>
+          <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
+            <h2 className="text-base sm:text-lg font-semibold text-zinc-900">Summary per Pembayaran</h2>
           </div>
           
-          <div className="overflow-x-auto flex-1">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto flex-1 max-h-[400px]">
+            <table className="w-full text-left border-collapse min-w-[350px]">
               <thead>
                 <tr className="bg-white border-b border-zinc-100 sticky top-0 z-10 shadow-sm">
-                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Metode</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-center">Trx</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right">Total Pendapatan</th>
+                  <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider whitespace-nowrap">Metode</th>
+                  <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider text-center whitespace-nowrap">Trx</th>
+                  <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right whitespace-nowrap">Total Pendapatan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={3} className="px-6 py-8 text-center text-sm text-zinc-500">Memuat data...</td>
+                    <td colSpan={3} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Memuat data...</td>
                   </tr>
                 ) : paymentStats.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="px-6 py-8 text-center text-sm text-zinc-500">Belum ada transaksi di periode ini.</td>
+                    <td colSpan={3} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Belum ada transaksi di periode ini.</td>
                   </tr>
                 ) : (
                   paymentStats.map((payment, idx) => {
-                    // Beri warna background berbeda untuk tiap metode
                     const badgeColor = 
                       payment.method.toLowerCase().includes("qris") ? "bg-purple-50 text-purple-700 border-purple-200" :
                       payment.method.toLowerCase().includes("tunai") ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
@@ -343,15 +344,15 @@ export default function DashboardPage() {
 
                     return (
                       <tr key={idx} className="hover:bg-zinc-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold border ${badgeColor}`}>
+                        <td className="px-4 py-3 sm:px-6 sm:py-4">
+                          <span className={`inline-flex items-center px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold border whitespace-nowrap ${badgeColor}`}>
                             {payment.method}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-sm text-zinc-600 text-center font-semibold">
+                        <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm text-zinc-600 text-center font-semibold">
                           {payment.count}
                         </td>
-                        <td className="px-6 py-4 text-sm font-bold text-zinc-900 text-right">
+                        <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm font-bold text-zinc-900 text-right whitespace-nowrap">
                           {formatRupiah(payment.revenue)}
                         </td>
                       </tr>
