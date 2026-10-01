@@ -15,6 +15,7 @@ export default function DashboardLayout({
 }) {
   const [loading, setLoading] = useState(true);
   const [adminName, setAdminName] = useState("");
+  const [userRole, setUserRole] = useState(""); // State baru untuk menyimpan role
   const router = useRouter();
 
   useEffect(() => {
@@ -26,9 +27,19 @@ export default function DashboardLayout({
 
       try {
         const userDoc = await getDoc(doc(db, "users", user.uid));
-        if (userDoc.exists() && userDoc.data().role === "admin") {
-          setAdminName(userDoc.data().nama || "Admin");
-          setLoading(false);
+        if (userDoc.exists()) {
+          const role = userDoc.data().role;
+          
+          // Izinkan admin DAN viewer untuk masuk ke area dashboard
+          if (role === "admin" || role === "viewer") {
+            setAdminName(userDoc.data().nama || "Pengguna");
+            setUserRole(role); // Simpan role ke state
+            setLoading(false);
+          } else {
+            // Jika role-nya "kasir" atau lainnya, tendang ke halaman login
+            await signOut(auth);
+            router.replace("/login");
+          }
         } else {
           await signOut(auth);
           router.replace("/login");
@@ -53,7 +64,7 @@ export default function DashboardLayout({
       <div className="min-h-screen flex items-center justify-center bg-zinc-50 text-zinc-500 font-sans">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-zinc-200 border-t-zinc-900 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-sm font-medium tracking-wide">Memverifikasi akses admin...</p>
+          <p className="text-sm font-medium tracking-wide">Memverifikasi akses...</p>
         </div>
       </div>
     );
@@ -63,8 +74,8 @@ export default function DashboardLayout({
     // Background utama diubah ke zinc-50 (abu-abu sangat muda/hampir putih)
     <div className="min-h-screen bg-zinc-50 text-zinc-900 flex font-sans selection:bg-zinc-200">
       
-      {/* Sidebar Component */}
-      <Sidebar adminName={adminName} onLogout={handleLogout} />
+      {/* Sidebar Component: Kirimkan userRole agar Sidebar tahu menu apa yang harus disembunyikan */}
+      <Sidebar adminName={adminName} userRole={userRole} onLogout={handleLogout} />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">

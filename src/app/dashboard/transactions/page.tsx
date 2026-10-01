@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, getDocs, query, orderBy, where } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, where, doc, getDoc } from "firebase/firestore";
 import { db } from "../../../config/firebase";
+import * as XLSX from "xlsx"; 
 
 // --- INTERFACES ---
 interface CartItem {
@@ -10,6 +11,9 @@ interface CartItem {
   name: string;
   price: number;
   quantity: number;
+  type?: "single" | "package";
+  selectedVariants?: { id: string, name: string, qty: number }[];
+  merchandises?: { id?: string, name: string, qty: number }[];
 }
 
 interface Transaction {
@@ -31,6 +35,7 @@ interface Transaction {
 export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [storeName, setStoreName] = useState("NAMA TOKO ANDA");
   
   // State Filter Waktu
   const [timeRange, setTimeRange] = useState("hari-ini");
@@ -62,10 +67,24 @@ export default function TransactionsPage() {
     }).format(date);
   };
 
+  // Mendapatkan label periode untuk nama file export
+  const getPeriodeLabel = () => {
+    if (timeRange === "hari-ini") return "Hari Ini";
+    if (timeRange === "minggu-ini") return "7 Hari Terakhir";
+    if (timeRange === "bulan-ini") return "Bulan Ini";
+    if (timeRange === "semua") return "Semua Waktu";
+    return `${startDate} s/d ${endDate}`;
+  };
+
   useEffect(() => {
     const fetchTransactions = async () => {
       setLoading(true);
       try {
+        const storeSnap = await getDoc(doc(db, "settings", "store_config"));
+        if (storeSnap.exists() && storeSnap.data().storeName) {
+          setStoreName(storeSnap.data().storeName);
+        }
+
         let start: Date | null = null;
         let end: Date | null = new Date(); 
         const now = new Date();
@@ -79,9 +98,8 @@ export default function TransactionsPage() {
         } else if (timeRange === "kustom" && startDate && endDate) {
           start = new Date(startDate);
           start.setHours(0, 0, 0, 0); 
-          
           end = new Date(endDate);
-          end.setHours(23, 59, 59, 999); 
+          end.setHours(23, 59, 59, 999);
         } else if (timeRange === "semua") {
           start = null;
           end = null;
@@ -124,6 +142,109 @@ export default function TransactionsPage() {
 
     fetchTransactions();
   }, [timeRange, startDate, endDate]); 
+
+  // ==========================================
+  // FUNGSI UNTUK EXPORT KE EXCEL (XLSX)
+  // ==========================================
+  const exportToExcel = () => {
+    // 1. Ekstrak Merch tiap transaksi dan cari transaksi dengan jenis Merch terbanyak
+    let maxMerchTypes = 0;
+    
+    const processedTransactions = transactions.map((tx) => {
+      const merchMap: Record<string, number> = {};
+      
+      if (tx.items && Array.isArray(tx.items)) {
+        tx.items.forEach((item) => {
+          if (item.type === "package" && item.merchandises) {
+            item.merchandises.forEach((m) => {
+              merchMap[m.name] = (merchMap[m.name] || 0) + (m.qty * item.quantity);
+            });
+          }
+        });
+      }
+
+      // Ubah dari Map menjadi Array of Array: [["Lunch Box", 1], ["Totebag", 2]]
+      const merchEntries = Object.entries(merchMap);
+      
+      // Update maxMerchTypes jika transaksi ini punya lebih banyak jenis merch dari yg lain
+      if (merchEntries.length > maxMerchTypes) {
+        maxMerchTypes = merchEntries.length;
+      }
+
+      return { tx, merchEntries };
+    });
+
+    // 2. Bentuk data ke format Excel
+    const dataToExport = processedTransactions.map(({ tx, merchEntries }, idx) => {
+      const rowData: any = {
+        "No": idx + 1,
+        "Waktu Transaksi": formatDateTime(tx.timestamp),
+        "ID Transaksi": tx.transactionId || tx.id,
+        "Kasir": tx.kasir || "Kasir",
+        "Metode Bayar": tx.paymentMethod || "Tunai",
+        "Status": tx.status === "Dibatalkan (Void)" ? "VOID" : "Sukses",
+      };
+
+      // Loop dinamis membuat pasang kolom "Qty Merch" & "Nama Merch"
+      for (let i = 1; i <= maxMerchTypes; i++) {
+        if (i - 1 < merchEntries.length) {
+          // Jika merch di index ini tersedia
+          rowData[`Qty Merch ${i}`] = merchEntries[i - 1][1]; // Qty
+          rowData[`Nama Merch ${i}`] = merchEntries[i - 1][0]; // Name
+        } else {
+          // Jika kosong (karena transaksi ini cuma punya sedikit merch)
+          rowData[`Qty Merch ${i}`] = "-";
+          rowData[`Nama Merch ${i}`] = "-";
+        }
+      }
+
+      // Lanjutkan kolom lainnya
+      rowData["Waktu Void"] = tx.voidedAt ? formatDateTime(tx.voidedAt) : "-";
+      rowData["Subtotal (Rp)"] = tx.subTotal || 0;
+      rowData["Pajak (Rp)"] = tx.tax || 0;
+      rowData["Total Tagihan (Rp)"] = tx.total || 0;
+      rowData["Uang Diterima (Rp)"] = tx.cashReceived || 0;
+      rowData["Kembalian (Rp)"] = tx.change || 0;
+
+      return rowData;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Riwayat Transaksi");
+
+    // 3. Atur lebar kolom dinamis
+    const columnWidths: any[] = [
+      { wch: 5 },   // No
+      { wch: 22 },  // Waktu Transaksi
+      { wch: 25 },  // ID Transaksi
+      { wch: 15 },  // Kasir
+      { wch: 15 },  // Metode Bayar
+      { wch: 10 },  // Status
+    ];
+
+    // Push lebar kolom untuk Merch sebanyak maxMerchTypes
+    for (let i = 0; i < maxMerchTypes; i++) {
+      columnWidths.push({ wch: 12 }); // Qty Merch
+      columnWidths.push({ wch: 25 }); // Nama Merch
+    }
+
+    // Push sisa kolom
+    columnWidths.push(
+      { wch: 20 },  // Waktu Void
+      { wch: 15 },  // Subtotal (Rp)
+      { wch: 15 },  // Pajak (Rp)
+      { wch: 18 },  // Total Tagihan (Rp)
+      { wch: 18 },  // Uang Diterima (Rp)
+      { wch: 15 }   // Kembalian (Rp)
+    );
+
+    worksheet["!cols"] = columnWidths;
+
+    const safePeriode = getPeriodeLabel().replace(/\//g, "-"); 
+    const fileName = `Riwayat_Transaksi_${storeName.replace(/\s+/g, "_")}_${safePeriode}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  };
 
   return (
     <div className="space-y-6 font-sans pb-10">
@@ -168,6 +289,15 @@ export default function TransactionsPage() {
               />
             </div>
           )}
+
+          {/* TOMBOL EXPORT EXCEL */}
+          <button 
+            onClick={exportToExcel}
+            disabled={loading || transactions.length === 0}
+            className="w-full sm:w-auto px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold text-sm rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 active:scale-95"
+          >
+            📊 Export XLSX
+          </button>
         </div>
       </div>
 
@@ -188,11 +318,11 @@ export default function TransactionsPage() {
             <tbody className="divide-y divide-zinc-100">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 sm:px-6 py-10 text-center text-xs sm:text-sm text-zinc-500">Memuat data transaksi...</td>
+                  <td colSpan={6} className="px-6 py-10 text-center text-sm text-zinc-500">Memuat data transaksi...</td>
                 </tr>
               ) : transactions.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 sm:px-6 py-10 text-center text-xs sm:text-sm text-zinc-500">Belum ada transaksi di periode ini.</td>
+                  <td colSpan={6} className="px-6 py-10 text-center text-sm text-zinc-500">Belum ada transaksi di periode ini.</td>
                 </tr>
               ) : (
                 transactions.map((tx) => (
@@ -250,7 +380,7 @@ export default function TransactionsPage() {
               </button>
             </div>
 
-            <div className="p-4 sm:p-6 overflow-y-auto flex-1">
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">
               {/* Info Status Void (Jika ada) */}
               {selectedTx.status === "Dibatalkan (Void)" && (
                 <div className="mb-6 p-3 sm:p-4 bg-red-50 border border-red-100 rounded-xl text-xs sm:text-sm">
@@ -282,16 +412,49 @@ export default function TransactionsPage() {
                 </div>
               </div>
 
-              {/* Rincian Barang */}
+              {/* Rincian Barang / Paket */}
               <h3 className="text-[10px] sm:text-xs font-bold text-zinc-900 uppercase tracking-wider mb-3 border-b border-zinc-100 pb-2">Rincian Pembelian</h3>
-              <div className="space-y-3 mb-6">
+              <div className="space-y-4 mb-6">
                 {selectedTx.items?.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center text-xs sm:text-sm">
-                    <div>
-                      <p className="font-semibold text-zinc-900">{item.name}</p>
-                      <p className="text-zinc-500 text-[10px] sm:text-xs">{item.quantity} x {formatRupiah(item.price)}</p>
+                  <div key={idx} className="flex flex-col text-xs sm:text-sm bg-zinc-50/70 p-3 rounded-xl border border-zinc-100">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-bold text-zinc-900">{item.name}</p>
+                        <p className="text-zinc-500 text-[10px] sm:text-xs">{item.quantity}x @ {formatRupiah(item.price)}</p>
+                      </div>
+                      <p className="font-extrabold text-zinc-900 whitespace-nowrap">{formatRupiah(item.price * item.quantity)}</p>
                     </div>
-                    <p className="font-bold text-zinc-900 whitespace-nowrap">{formatRupiah(item.price * item.quantity)}</p>
+
+                    {/* Jika Paket: Tampilkan Detail Varian Pilihan & Souvenir/Merch */}
+                    {item.type === "package" && (
+                      <div className="mt-2 pt-2 border-t border-zinc-200/60 space-y-1.5">
+                        {item.selectedVariants && item.selectedVariants.length > 0 && (
+                          <div>
+                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Varian Dipilih:</span>
+                            <div className="pl-2 mt-0.5 space-y-0.5">
+                              {item.selectedVariants.map((v, i) => (
+                                <p key={i} className="text-[11px] text-zinc-700 font-medium flex items-center gap-1">
+                                  <span className="w-1 h-1 bg-zinc-400 rounded-full"></span> {v.qty * item.quantity} Pcs {v.name}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {item.merchandises && item.merchandises.length > 0 && (
+                          <div className="mt-1.5">
+                            <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider">🎁 Hadiah / Souvenir:</span>
+                            <div className="pl-2 mt-0.5 space-y-0.5">
+                              {item.merchandises.map((m, i) => (
+                                <p key={i} className="text-[11px] text-purple-900 font-medium flex items-center gap-1">
+                                  <span className="w-1 h-1 bg-purple-400 rounded-full"></span> {m.qty * item.quantity}x {m.name}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -326,7 +489,7 @@ export default function TransactionsPage() {
               </div>
             </div>
 
-            <div className="p-4 sm:p-5 border-t border-zinc-100">
+            <div className="p-4 sm:p-5 border-t border-zinc-100 bg-white">
               <button 
                 onClick={() => setSelectedTx(null)}
                 className="w-full py-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold rounded-xl transition-all active:scale-95 text-sm sm:text-base"

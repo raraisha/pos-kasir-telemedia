@@ -22,6 +22,11 @@ interface ProductSales {
   revenue: number;
 }
 
+interface MerchSales {
+  name: string;
+  qty: number;
+}
+
 interface PaymentStats {
   method: string;
   count: number;
@@ -42,7 +47,10 @@ export default function DashboardPage() {
     totalRevenue: 0,
     totalTransactions: 0,
   });
-  const [topProducts, setTopProducts] = useState<ProductSales[]>([]);
+  
+  const [topPackages, setTopPackages] = useState<ProductSales[]>([]);
+  const [topItems, setTopItems] = useState<ProductSales[]>([]);
+  const [topMerch, setTopMerch] = useState<MerchSales[]>([]);
   const [paymentStats, setPaymentStats] = useState<PaymentStats[]>([]);
 
   // Format Rupiah
@@ -124,7 +132,10 @@ export default function DashboardPage() {
         
         let revenue = 0;
         let txCount = 0;
-        const productSalesMap: Record<string, ProductSales> = {};
+        
+        const packageSalesMap: Record<string, ProductSales> = {};
+        const itemSalesMap: Record<string, ProductSales> = {};
+        const merchSalesMap: Record<string, MerchSales> = {};
         const paymentMap: Record<string, PaymentStats> = {};
 
         // 4. Proses Loop Transaksi Filtered
@@ -136,14 +147,48 @@ export default function DashboardPage() {
             revenue += data.total || 0;
             txCount++;
 
-            // Kalkulasi Produk Terjual
+            // Pembedahan Item Keranjang
             if (data.items && Array.isArray(data.items)) {
               data.items.forEach((item) => {
-                if (!productSalesMap[item.id]) {
-                  productSalesMap[item.id] = { name: item.name, qty: 0, revenue: 0 };
+                const qty = item.quantity || 1;
+                const isPackage = item.type === "package";
+
+                if (isPackage) {
+                  // A. Catat Paketnya
+                  const pkgId = item.realId || item.id || item.name;
+                  if (!packageSalesMap[pkgId]) {
+                    packageSalesMap[pkgId] = { name: item.name, qty: 0, revenue: 0 };
+                  }
+                  packageSalesMap[pkgId].qty += qty;
+                  packageSalesMap[pkgId].revenue += (item.price * qty);
+
+                  // B. Catat Varian sebagai Item Satuan yang keluar
+                  item.selectedVariants?.forEach((v: any) => {
+                    const vId = v.id || v.name;
+                    if (!itemSalesMap[vId]) {
+                      itemSalesMap[vId] = { name: v.name, qty: 0, revenue: 0 }; 
+                    }
+                    itemSalesMap[vId].qty += (v.qty * qty);
+                  });
+
+                  // C. Catat Merchandise yang keluar
+                  item.merchandises?.forEach((m: any) => {
+                    const mId = m.id || m.name;
+                    if (!merchSalesMap[mId]) {
+                      merchSalesMap[mId] = { name: m.name, qty: 0 };
+                    }
+                    merchSalesMap[mId].qty += (m.qty * qty);
+                  });
+
+                } else {
+                  // A. Catat Produk Satuan Biasa
+                  const itemId = item.realId || item.id || item.name;
+                  if (!itemSalesMap[itemId]) {
+                    itemSalesMap[itemId] = { name: item.name, qty: 0, revenue: 0 };
+                  }
+                  itemSalesMap[itemId].qty += qty;
+                  itemSalesMap[itemId].revenue += (item.price * qty);
                 }
-                productSalesMap[item.id].qty += item.quantity;
-                productSalesMap[item.id].revenue += (item.price * item.quantity);
               });
             }
 
@@ -157,7 +202,10 @@ export default function DashboardPage() {
           }
         });
 
-        const sortedProducts = Object.values(productSalesMap).sort((a, b) => b.qty - a.qty);
+        // Sorting dari yang terbanyak
+        const sortedPackages = Object.values(packageSalesMap).sort((a, b) => b.qty - a.qty);
+        const sortedItems = Object.values(itemSalesMap).sort((a, b) => b.qty - a.qty);
+        const sortedMerch = Object.values(merchSalesMap).sort((a, b) => b.qty - a.qty);
         const sortedPayments = Object.values(paymentMap).sort((a, b) => b.revenue - a.revenue);
 
         // Update semua State
@@ -166,7 +214,10 @@ export default function DashboardPage() {
           totalRevenue: revenue,
           totalTransactions: txCount, 
         });
-        setTopProducts(sortedProducts);
+        
+        setTopPackages(sortedPackages);
+        setTopItems(sortedItems);
+        setTopMerch(sortedMerch);
         setPaymentStats(sortedPayments);
 
       } catch (error) {
@@ -185,7 +236,7 @@ export default function DashboardPage() {
       {/* Header Halaman & Filter Waktu Dinamis */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">Dashboard Admin</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">Dashboard</h1>
           <p className="text-xs sm:text-sm text-zinc-500 mt-1">
             Ringkasan performa toko dan aktivitas transaksi.
           </p>
@@ -229,7 +280,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Grid Statistik Kartu */}
+      {/* Grid Statistik Kartu Utama */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
         <div className="bg-white border border-zinc-200 p-5 sm:p-6 rounded-2xl shadow-sm">
           <div className="flex justify-between items-start mb-2">
@@ -263,45 +314,40 @@ export default function DashboardPage() {
             </span>
           </div>
           <p className="text-xl sm:text-2xl font-bold text-zinc-900">
-            {loading ? "..." : stats.totalProductsSoldToday} <span className="text-xs sm:text-sm font-medium text-zinc-400">item</span>
+            {loading ? "..." : stats.totalProductsSoldToday} <span className="text-xs sm:text-sm font-medium text-zinc-400">keranjang</span>
           </p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6">
         
-        {/* ================= Bagian Kiri: Tabel Penjualan Produk ================= */}
+        {/* ================= 1. Tabel Penjualan PAKET ================= */}
         <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
           <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
-            <h2 className="text-base sm:text-lg font-semibold text-zinc-900">Summary Penjualan Produk</h2>
+            <h2 className="text-base sm:text-lg font-semibold text-zinc-900">Penjualan Paket (Bundling)</h2>
           </div>
-          
           <div className="overflow-x-auto flex-1 max-h-[400px]">
             <table className="w-full text-left border-collapse min-w-[400px]">
               <thead>
                 <tr className="bg-white border-b border-zinc-100 sticky top-0 z-10 shadow-sm">
-                  <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider whitespace-nowrap">Nama Produk</th>
+                  <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider whitespace-nowrap">Nama Paket</th>
                   <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider text-center whitespace-nowrap">Terjual</th>
                   <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right whitespace-nowrap">Pendapatan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {loading ? (
-                  <tr>
-                    <td colSpan={3} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Memuat data...</td>
-                  </tr>
-                ) : topProducts.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Belum ada penjualan di periode ini.</td>
-                  </tr>
+                  <tr><td colSpan={3} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Memuat data...</td></tr>
+                ) : topPackages.length === 0 ? (
+                  <tr><td colSpan={3} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Belum ada paket terjual.</td></tr>
                 ) : (
-                  topProducts.map((product, idx) => (
+                  topPackages.map((pkg, idx) => (
                     <tr key={idx} className="hover:bg-zinc-50 transition-colors">
-                      <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm font-semibold text-zinc-900">{product.name}</td>
+                      <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm font-semibold text-zinc-900">{pkg.name}</td>
                       <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm text-zinc-600 text-center">
-                        <span className="bg-blue-50 text-blue-700 font-bold px-2.5 py-1 rounded-md">{product.qty}</span>
+                        <span className="bg-blue-50 text-blue-700 font-bold px-2.5 py-1 rounded-md">{pkg.qty}</span>
                       </td>
-                      <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm font-bold text-zinc-900 text-right whitespace-nowrap">{formatRupiah(product.revenue)}</td>
+                      <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm font-bold text-zinc-900 text-right whitespace-nowrap">{formatRupiah(pkg.revenue)}</td>
                     </tr>
                   ))
                 )}
@@ -310,12 +356,77 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ================= Bagian Kanan: Summary Metode Pembayaran ================= */}
+        {/* ================= 2. Tabel Penjualan ITEM (Satuan + Varian) ================= */}
+        <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+          <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
+            <h2 className="text-base sm:text-lg font-semibold text-zinc-900">Penjualan per Item</h2>
+          </div>
+          <div className="overflow-x-auto flex-1 max-h-[400px]">
+            <table className="w-full text-left border-collapse min-w-[400px]">
+              <thead>
+                <tr className="bg-white border-b border-zinc-100 sticky top-0 z-10 shadow-sm">
+                  <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider whitespace-nowrap">Nama Item</th>
+                  <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider text-center whitespace-nowrap">Terjual (Pcs)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {loading ? (
+                  <tr><td colSpan={2} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Memuat data...</td></tr>
+                ) : topItems.length === 0 ? (
+                  <tr><td colSpan={2} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Belum ada penjualan item.</td></tr>
+                ) : (
+                  topItems.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-zinc-50 transition-colors">
+                      <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm font-semibold text-zinc-900">{item.name}</td>
+                      <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm text-zinc-600 text-center">
+                        <span className="bg-emerald-50 text-emerald-700 font-bold px-2.5 py-1 rounded-md">{item.qty}</span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* ================= 3. Tabel Penggunaan MERCHANDISE ================= */}
+        <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+          <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
+            <h2 className="text-base sm:text-lg font-semibold text-zinc-900">Distribusi Merchandise (Hadiah)</h2>
+          </div>
+          <div className="overflow-x-auto flex-1 max-h-[400px]">
+            <table className="w-full text-left border-collapse min-w-[350px]">
+              <thead>
+                <tr className="bg-white border-b border-zinc-100 sticky top-0 z-10 shadow-sm">
+                  <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider whitespace-nowrap">Nama Merchandise</th>
+                  <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider text-center whitespace-nowrap">Keluar (Pcs)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {loading ? (
+                  <tr><td colSpan={2} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Memuat data...</td></tr>
+                ) : topMerch.length === 0 ? (
+                  <tr><td colSpan={2} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Tidak ada merchandise yang keluar.</td></tr>
+                ) : (
+                  topMerch.map((merch, idx) => (
+                    <tr key={idx} className="hover:bg-zinc-50 transition-colors">
+                      <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm font-semibold text-zinc-900">🎁 {merch.name}</td>
+                      <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm text-zinc-600 text-center">
+                        <span className="bg-purple-50 text-purple-700 font-bold px-2.5 py-1 rounded-md">{merch.qty}</span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* ================= 4. Tabel Summary METODE PEMBAYARAN ================= */}
         <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
           <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
             <h2 className="text-base sm:text-lg font-semibold text-zinc-900">Summary per Pembayaran</h2>
           </div>
-          
           <div className="overflow-x-auto flex-1 max-h-[400px]">
             <table className="w-full text-left border-collapse min-w-[350px]">
               <thead>
@@ -327,13 +438,9 @@ export default function DashboardPage() {
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {loading ? (
-                  <tr>
-                    <td colSpan={3} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Memuat data...</td>
-                  </tr>
+                  <tr><td colSpan={3} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Memuat data...</td></tr>
                 ) : paymentStats.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Belum ada transaksi di periode ini.</td>
-                  </tr>
+                  <tr><td colSpan={3} className="px-4 sm:px-6 py-8 text-center text-sm text-zinc-500">Belum ada transaksi di periode ini.</td></tr>
                 ) : (
                   paymentStats.map((payment, idx) => {
                     const badgeColor = 

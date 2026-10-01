@@ -295,6 +295,7 @@ export default function CashiersPage() {
                 >
                   <option value="kasir">Kasir (Buka POS)</option>
                   <option value="admin">Administrator (Akses Dashboard)</option>
+                  <option value="viewer">Viewer</option>
                 </select>
               </div>
 

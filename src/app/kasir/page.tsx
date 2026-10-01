@@ -456,7 +456,7 @@ export default function KasirPage() {
   };
 
   const submitVoidTransaction = async () => {
-    if (adminPin === "123456") { 
+    if (adminPin === "RAHASIA") { 
       try {
         if (lastTransaction?.id && isOnline) {
           await updateDoc(doc(db, "transactions", lastTransaction.id), {

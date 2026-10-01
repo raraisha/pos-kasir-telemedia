@@ -9,27 +9,23 @@ import { db } from "../../config/firebase";
 
 interface SidebarProps {
   adminName: string;
+  userRole?: string; // <-- TAMBAHAN: Menyimpan role user (admin / kasir / viewer)
   onLogout: () => void;
 }
 
-export default function Sidebar({ adminName, onLogout }: SidebarProps) {
+export default function Sidebar({ adminName, userRole = "admin", onLogout }: SidebarProps) {
   const pathname = usePathname();
   
-  // State untuk mode Desktop (Luas/Sempit)
   const [isCollapsed, setIsCollapsed] = useState(false);
-  // State untuk mode Mobile (Buka/Tutup)
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   
-  // State untuk menyimpan nama brand & aplikasi dari database
   const [storeName, setStoreName] = useState("Loading...");
   const [appName, setAppName] = useState("POS Dashboard");
 
-  // Otomatis menutup sidebar di mobile setiap kali berpindah halaman
   useEffect(() => {
     setIsMobileOpen(false);
   }, [pathname]);
 
-  // Mengambil data storeName dan appName dari Firestore secara real-time
   useEffect(() => {
     const docRef = doc(db, "settings", "store_config");
     
@@ -47,7 +43,6 @@ export default function Sidebar({ adminName, onLogout }: SidebarProps) {
     return () => unsubscribe();
   }, []);
 
-  // Fungsi dinamis untuk class CSS menu link
   const getLinkStyle = (path: string) => {
     const isActive = pathname === path;
     
@@ -61,6 +56,25 @@ export default function Sidebar({ adminName, onLogout }: SidebarProps) {
         : "text-slate-400 hover:bg-slate-800 hover:text-white"
     }`;
   };
+
+  // ==========================================
+  // PENGATURAN HAK AKSES MENU (ROLE-BASED)
+  // ==========================================
+  const allMenus = [
+    { path: "/dashboard", icon: "📊", label: "Ringkasan", allowedRoles: ["admin", "viewer"] },
+    { path: "/dashboard/products", icon: "📦", label: "Kelola Produk", allowedRoles: ["admin"] },
+    { path: "/dashboard/cashiers", icon: "👥", label: "Kelola Pengguna", allowedRoles: ["admin"] },
+    { path: "/dashboard/merchandise", icon: "🎁", label: "Kelola Merchandise", allowedRoles: ["admin"] },
+    { path: "/dashboard/packages", icon: "🍱", label: "Kelola Paket", allowedRoles: ["admin"] },
+    { path: "/dashboard/transactions", icon: "📈", label: "Transaksi", allowedRoles: ["admin"] },
+    { path: "/dashboard/logs", icon: "📋", label: "Log Aktivitas", allowedRoles: ["admin"] },
+    { path: "/dashboard/import", icon: "📥", label: "Impor Data", allowedRoles: ["admin"] },
+    // { path: "/dashboard/reports", icon: "📝", label: "Laporan", allowedRoles: ["admin"] }, 
+    { path: "/dashboard/settings", icon: "⚙️", label: "Pengaturan", allowedRoles: ["admin"] },
+  ];
+
+  // Filter menu agar yang muncul hanya yang diizinkan untuk role saat ini
+  const visibleMenus = allMenus.filter(menu => menu.allowedRoles.includes(userRole));
 
   return (
     <>
@@ -84,7 +98,6 @@ export default function Sidebar({ adminName, onLogout }: SidebarProps) {
       )}
 
       {/* ================= SIDEBAR ================= */}
-      {/* PERUBAHAN: Lebar diubah dari w-64 menjadi w-72 */}
       <aside 
         className={`print:hidden fixed inset-y-0 left-0 z-50 md:relative flex flex-col justify-between bg-slate-900 border-r border-slate-800 p-4 sm:p-6 transition-all duration-300 shadow-xl 
         ${isMobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"} 
@@ -99,7 +112,6 @@ export default function Sidebar({ adminName, onLogout }: SidebarProps) {
               <div className="w-9 h-9 bg-blue-600 text-white flex items-center justify-center rounded-xl text-sm font-bold shadow-md shadow-blue-600/30 shrink-0">
                 {storeName !== "Loading..." && storeName.length > 0 ? storeName.charAt(0).toUpperCase() : "T"}
               </div>
-              {/* PERUBAHAN: max-w diperbesar jadi 190px agar tulisan tidak cepat terpotong */}
               <span className="leading-tight truncate max-w-[190px]">
                 {storeName} <br/>
                 <span className="text-slate-400 font-medium text-xs">{appName}</span>
@@ -128,20 +140,9 @@ export default function Sidebar({ adminName, onLogout }: SidebarProps) {
             </button>
           </div>
           
-          {/* Navigation */}
+          {/* Navigation - Render Menu Yang Diizinkan Saja */}
           <nav className="space-y-2">
-            {[
-              { path: "/dashboard", icon: "📊", label: "Ringkasan" },
-              { path: "/dashboard/products", icon: "📦", label: "Kelola Produk" },
-              { path: "/dashboard/cashiers", icon: "👥", label: "Kelola Kasir" },
-              { path: "/dashboard/merchandise", icon: "🎁", label: "Kelola merchandise" },
-              { path: "/dashboard/packages", icon: "🎁", label: "Kelola Paket" },
-              { path: "/dashboard/transactions", icon: "📈", label: "Transaksi" },
-              { path: "/dashboard/logs", icon: "📋", label: "Log Aktivitas" },
-              { path: "/dashboard/import", icon: "📥", label: "Impor Data" },
-              { path: "/dashboard/reports", icon: "📝", label: "Laporan" },
-              { path: "/dashboard/settings", icon: "⚙️", label: "Pengaturan" },
-            ].map((menu) => (
+            {visibleMenus.map((menu) => (
               <Link key={menu.path} href={menu.path} className={getLinkStyle(menu.path)} title={menu.label}>
                 <span className="text-lg shrink-0">{menu.icon}</span>
                 <span className={`whitespace-nowrap ${isCollapsed ? "md:hidden" : ""}`}>
@@ -155,7 +156,9 @@ export default function Sidebar({ adminName, onLogout }: SidebarProps) {
         {/* User Info & Logout */}
         <div className="pt-6 border-t border-slate-800 flex flex-col items-center">
           <div className={`mb-4 px-2 overflow-hidden whitespace-nowrap w-full text-left ${isCollapsed ? "md:hidden" : ""}`}>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Masuk sebagai:</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              Masuk sebagai: <span className="text-blue-400 ml-1">{userRole.toUpperCase()}</span>
+            </p>
             <p className="text-sm font-bold text-slate-200 truncate">{adminName}</p>
           </div>
 

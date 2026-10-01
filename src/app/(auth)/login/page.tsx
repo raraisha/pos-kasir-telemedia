@@ -30,11 +30,13 @@ export default function LoginPage() {
       if (userDoc.exists()) {
         const userData = userDoc.data();
         
-        // 3. Pengecekan Role (Admin & Kasir)
+        // 3. Pengecekan Role (Admin, Kasir, & Viewer)
         if (userData.role === "admin") {
           router.push("/dashboard"); 
         } else if (userData.role === "kasir") {
           router.push("/kasir"); 
+        } else if (userData.role === "viewer") {
+          router.push("/dashboard");
         } else {
           setError("Akses ditolak. Akun ini tidak memiliki izin yang valid.");
           await auth.signOut();

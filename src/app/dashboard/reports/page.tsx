@@ -11,6 +11,9 @@ interface CartItem {
   name: string;
   price: number;
   quantity: number;
+  type?: "single" | "package";
+  selectedVariants?: { id: string, name: string, qty: number }[];
+  merchandises?: { id?: string, name: string, qty: number }[];
 }
 
 interface Transaction {
@@ -318,7 +321,7 @@ export default function TransactionsPage() {
               </button>
             </div>
 
-            <div className="p-4 sm:p-6 overflow-y-auto flex-1">
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">
               {/* Info Status Void (Jika ada) */}
               {selectedTx.status === "Dibatalkan (Void)" && (
                 <div className="mb-6 p-3 sm:p-4 bg-red-50 border border-red-100 rounded-xl text-xs sm:text-sm">
@@ -350,16 +353,49 @@ export default function TransactionsPage() {
                 </div>
               </div>
 
-              {/* Rincian Barang */}
+              {/* Rincian Barang / Paket */}
               <h3 className="text-[10px] sm:text-xs font-bold text-zinc-900 uppercase tracking-wider mb-3 border-b border-zinc-100 pb-2">Rincian Pembelian</h3>
-              <div className="space-y-3 mb-6">
+              <div className="space-y-4 mb-6">
                 {selectedTx.items?.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center text-xs sm:text-sm">
-                    <div>
-                      <p className="font-semibold text-zinc-900">{item.name}</p>
-                      <p className="text-zinc-500 text-[10px] sm:text-xs">{item.quantity} x {formatRupiah(item.price)}</p>
+                  <div key={idx} className="flex flex-col text-xs sm:text-sm bg-zinc-50/70 p-3 rounded-xl border border-zinc-100">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-bold text-zinc-900">{item.name}</p>
+                        <p className="text-zinc-500 text-[10px] sm:text-xs">{item.quantity}x @ {formatRupiah(item.price)}</p>
+                      </div>
+                      <p className="font-extrabold text-zinc-900 whitespace-nowrap">{formatRupiah(item.price * item.quantity)}</p>
                     </div>
-                    <p className="font-bold text-zinc-900 whitespace-nowrap">{formatRupiah(item.price * item.quantity)}</p>
+
+                    {/* Jika Paket: Tampilkan Detail Varian Pilihan & Souvenir/Merch */}
+                    {item.type === "package" && (
+                      <div className="mt-2 pt-2 border-t border-zinc-200/60 space-y-1.5">
+                        {item.selectedVariants && item.selectedVariants.length > 0 && (
+                          <div>
+                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Varian Dipilih:</span>
+                            <div className="pl-2 mt-0.5 space-y-0.5">
+                              {item.selectedVariants.map((v, i) => (
+                                <p key={i} className="text-[11px] text-zinc-700 font-medium flex items-center gap-1">
+                                  <span className="w-1 h-1 bg-zinc-400 rounded-full"></span> {v.qty * item.quantity} Pcs {v.name}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {item.merchandises && item.merchandises.length > 0 && (
+                          <div className="mt-1.5">
+                            <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider">🎁 Hadiah / Souvenir:</span>
+                            <div className="pl-2 mt-0.5 space-y-0.5">
+                              {item.merchandises.map((m, i) => (
+                                <p key={i} className="text-[11px] text-purple-900 font-medium flex items-center gap-1">
+                                  <span className="w-1 h-1 bg-purple-400 rounded-full"></span> {m.qty * item.quantity}x {m.name}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
