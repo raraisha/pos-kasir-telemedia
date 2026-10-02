@@ -199,11 +199,13 @@ export default function CashiersPage() {
                     </td>
                     <td className="px-4 py-3 sm:px-6 sm:py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2 py-1 sm:px-2.5 sm:py-1 rounded-md text-[10px] sm:text-xs font-medium ${
-                        user.role === 'admin' 
-                          ? 'bg-purple-100 text-purple-700' 
+                        user.role === 'admin'
+                          ? 'bg-purple-100 text-purple-700'
+                          : user.role === 'viewer'
+                          ? 'bg-green-100 text-green-700'
                           : 'bg-blue-100 text-blue-700'
                       }`}>
-                        {user.role === 'admin' ? 'Administrator' : 'Kasir'}
+                        {user.role === 'admin' ? 'Administrator' : user.role === 'viewer' ? 'Client' : 'Kasir'}
                       </span>
                     </td>
                     <td className="px-4 py-3 sm:px-6 sm:py-4 text-right whitespace-nowrap">

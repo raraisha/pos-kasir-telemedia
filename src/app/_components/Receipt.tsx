@@ -49,7 +49,7 @@ export default function Receipt({ data }: ReceiptProps) {
           setStoreConfig({
             storeName: cfg.storeName || "NAMA TOKO ANDA",
             storeAddress: cfg.storeAddress || "Jl. Contoh Alamat",
-            storePhone: cfg.storePhone || "-",
+            storePhone: cfg.storePhone || "",
             receiptFooter: cfg.receiptFooter || "Terima kasih atas kunjungan Anda!",
           });
         }
@@ -106,7 +106,7 @@ export default function Receipt({ data }: ReceiptProps) {
         <div style={{ textAlign: "center", marginBottom: "8px", marginTop: "10px" }}>
           <h2 style={{ margin: "0", fontSize: "14px", fontWeight: "bold" }}>{storeConfig.storeName}</h2>
           <p style={{ margin: "2px 0 0 0", fontSize: "10px" }}>{storeConfig.storeAddress}</p>
-          <p style={{ margin: "0", fontSize: "10px" }}>Telp: {storeConfig.storePhone}</p>
+          <p style={{ margin: "0", fontSize: "10px" }}>{storeConfig.storePhone}</p>
         </div>
 
         {/* Info Transaksi */}
