@@ -26,6 +26,7 @@ interface Transaction {
   cashReceived: number;
   change: number;
   kasir: string;
+  spg?: string; // <-- Field SPG
   status?: string;
   timestamp: any;
   items: CartItem[];
@@ -147,12 +148,12 @@ export default function TransactionsPage() {
   // FUNGSI UNTUK EXPORT KE EXCEL (XLSX)
   // ==========================================
   const exportToExcel = () => {
-    // 1. Ekstrak Merch tiap transaksi dan cari transaksi dengan jenis Merch terbanyak
     let maxMerchTypes = 0;
     
     const processedTransactions = transactions.map((tx) => {
       const merchMap: Record<string, number> = {};
       
+      // 1. Ekstrak Merchandise (DIJAGA AGAR TIDAK HILANG)
       if (tx.items && Array.isArray(tx.items)) {
         tx.items.forEach((item) => {
           if (item.type === "package" && item.merchandises) {
@@ -163,36 +164,45 @@ export default function TransactionsPage() {
         });
       }
 
-      // Ubah dari Map menjadi Array of Array: [["Lunch Box", 1], ["Totebag", 2]]
       const merchEntries = Object.entries(merchMap);
-      
-      // Update maxMerchTypes jika transaksi ini punya lebih banyak jenis merch dari yg lain
       if (merchEntries.length > maxMerchTypes) {
         maxMerchTypes = merchEntries.length;
       }
 
-      return { tx, merchEntries };
+      // 2. Format Item Terjual (Detail Varian Paket)
+      const itemsDetail = tx.items && Array.isArray(tx.items) 
+        ? tx.items.map(item => {
+            let itemText = `${item.quantity}x ${item.name}`;
+            if (item.type === "package" && item.selectedVariants && item.selectedVariants.length > 0) {
+              const variants = item.selectedVariants.map(v => `${v.qty * item.quantity} ${v.name}`).join(", ");
+              itemText += ` (${variants})`;
+            }
+            return itemText;
+          }).join("\n") 
+        : "-";
+
+      return { tx, merchEntries, itemsDetail };
     });
 
-    // 2. Bentuk data ke format Excel
-    const dataToExport = processedTransactions.map(({ tx, merchEntries }, idx) => {
+    // 3. Bentuk data ke format Excel
+    const dataToExport = processedTransactions.map(({ tx, merchEntries, itemsDetail }, idx) => {
       const rowData: any = {
         "No": idx + 1,
         "Waktu Transaksi": formatDateTime(tx.timestamp),
         "ID Transaksi": tx.transactionId || tx.id,
         "Kasir": tx.kasir || "Kasir",
+        "SPG / SPB": tx.spg || "-",  // <-- Menambahkan SPG
+        "Item Terjual": itemsDetail, // <-- Menambahkan Item Terjual
         "Metode Bayar": tx.paymentMethod || "Tunai",
         "Status": tx.status === "Dibatalkan (Void)" ? "VOID" : "Sukses",
       };
 
-      // Loop dinamis membuat pasang kolom "Qty Merch" & "Nama Merch"
+      // Loop dinamis membuat pasang kolom "Qty Merch" & "Nama Merch" (TETAP ADA)
       for (let i = 1; i <= maxMerchTypes; i++) {
         if (i - 1 < merchEntries.length) {
-          // Jika merch di index ini tersedia
-          rowData[`Qty Merch ${i}`] = merchEntries[i - 1][1]; // Qty
-          rowData[`Nama Merch ${i}`] = merchEntries[i - 1][0]; // Name
+          rowData[`Qty Merch ${i}`] = merchEntries[i - 1][1];
+          rowData[`Nama Merch ${i}`] = merchEntries[i - 1][0];
         } else {
-          // Jika kosong (karena transaksi ini cuma punya sedikit merch)
           rowData[`Qty Merch ${i}`] = "-";
           rowData[`Nama Merch ${i}`] = "-";
         }
@@ -213,17 +223,19 @@ export default function TransactionsPage() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Riwayat Transaksi");
 
-    // 3. Atur lebar kolom dinamis
+    // 4. Atur lebar kolom dinamis
     const columnWidths: any[] = [
       { wch: 5 },   // No
       { wch: 22 },  // Waktu Transaksi
       { wch: 25 },  // ID Transaksi
       { wch: 15 },  // Kasir
+      { wch: 15 },  // SPG / SPB
+      { wch: 45 },  // Item Terjual (Diperlebar karena berisi rincian barang)
       { wch: 15 },  // Metode Bayar
       { wch: 10 },  // Status
     ];
 
-    // Push lebar kolom untuk Merch sebanyak maxMerchTypes
+    // Push lebar kolom untuk Merch sebanyak maxMerchTypes (TETAP ADA)
     for (let i = 0; i < maxMerchTypes; i++) {
       columnWidths.push({ wch: 12 }); // Qty Merch
       columnWidths.push({ wch: 25 }); // Nama Merch
@@ -304,11 +316,12 @@ export default function TransactionsPage() {
       {/* Tabel Transaksi */}
       <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[700px]">
+          <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
               <tr className="bg-zinc-50/50 border-b border-zinc-100">
                 <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider whitespace-nowrap">Waktu & ID</th>
                 <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider whitespace-nowrap">Kasir</th>
+                <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider whitespace-nowrap">SPG/B</th>
                 <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider whitespace-nowrap">Metode</th>
                 <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider whitespace-nowrap">Status</th>
                 <th className="px-4 py-3 sm:px-6 sm:py-4 text-[10px] sm:text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right whitespace-nowrap">Total (Rp)</th>
@@ -318,11 +331,11 @@ export default function TransactionsPage() {
             <tbody className="divide-y divide-zinc-100">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-10 text-center text-sm text-zinc-500">Memuat data transaksi...</td>
+                  <td colSpan={7} className="px-6 py-10 text-center text-sm text-zinc-500">Memuat data transaksi...</td>
                 </tr>
               ) : transactions.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-10 text-center text-sm text-zinc-500">Belum ada transaksi di periode ini.</td>
+                  <td colSpan={7} className="px-6 py-10 text-center text-sm text-zinc-500">Belum ada transaksi di periode ini.</td>
                 </tr>
               ) : (
                 transactions.map((tx) => (
@@ -332,6 +345,10 @@ export default function TransactionsPage() {
                       <p className="text-[10px] sm:text-xs text-zinc-500 mt-0.5">{tx.transactionId || tx.id}</p>
                     </td>
                     <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm text-zinc-700 whitespace-nowrap">{tx.kasir}</td>
+                    
+                    {/* Kolom SPG */}
+                    <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm text-zinc-700 whitespace-nowrap">{tx.spg || "-"}</td>
+                    
                     <td className="px-4 py-3 sm:px-6 sm:py-4">
                       <span className={`inline-flex items-center px-2 py-1 sm:px-2.5 sm:py-1 rounded-md text-[10px] sm:text-xs font-bold whitespace-nowrap ${
                         tx.paymentMethod === 'Tunai' ? 'bg-zinc-100 text-zinc-700' : 'bg-blue-50 text-blue-700'
@@ -393,14 +410,18 @@ export default function TransactionsPage() {
               )}
 
               {/* Grid Info */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 text-xs sm:text-sm">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6 text-xs sm:text-sm">
                 <div>
-                  <p className="text-zinc-500 text-[10px] sm:text-xs uppercase tracking-wider mb-1">Waktu Pembelian</p>
+                  <p className="text-zinc-500 text-[10px] sm:text-xs uppercase tracking-wider mb-1">Waktu Beli</p>
                   <p className="font-semibold text-zinc-900">{formatDateTime(selectedTx.timestamp)}</p>
                 </div>
                 <div>
-                  <p className="text-zinc-500 text-[10px] sm:text-xs uppercase tracking-wider mb-1">Kasir Bertugas</p>
+                  <p className="text-zinc-500 text-[10px] sm:text-xs uppercase tracking-wider mb-1">Kasir</p>
                   <p className="font-semibold text-zinc-900">{selectedTx.kasir}</p>
+                </div>
+                <div>
+                  <p className="text-zinc-500 text-[10px] sm:text-xs uppercase tracking-wider mb-1">SPG / SPB</p>
+                  <p className="font-semibold text-zinc-900">{selectedTx.spg || "-"}</p>
                 </div>
                 <div>
                   <p className="text-zinc-500 text-[10px] sm:text-xs uppercase tracking-wider mb-1">Metode Bayar</p>

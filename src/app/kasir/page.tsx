@@ -40,6 +40,11 @@ interface CartItem {
   merchandises?: { id?: string, name: string, qty: number }[];
 }
 
+interface SPG {
+  id: string;
+  name: string;
+}
+
 export default function KasirPage() {
   const router = useRouter();
 
@@ -54,6 +59,11 @@ export default function KasirPage() {
   const [activeCategory, setActiveCategory] = useState("Semua");
   const [loading, setLoading] = useState(true);
   const [merchandisesDb, setMerchandisesDb] = useState<any[]>([]);
+
+  // --- STATE SPG & CHECKOUT STEP ---
+  const [spgList, setSpgList] = useState<SPG[]>([]);
+  const [selectedSpg, setSelectedSpg] = useState<string>("");
+  const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1); // 1: Pembayaran, 2: SPG
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [currentTrxId, setCurrentTrxId] = useState(""); 
@@ -157,7 +167,27 @@ export default function KasirPage() {
         }
       } catch (e) {}
     };
+    
+    const fetchSpgList = async () => {
+      try {
+        const spgSnap = await getDocs(collection(db, "spg"));
+        if (!spgSnap.empty) {
+          setSpgList(spgSnap.docs.map(doc => ({ id: doc.id, name: doc.data().name })));
+        } else {
+          // Bikin default SPG 1 sampai 12
+          const defaultSpgs = Array.from({ length: 12 }, (_, i) => ({
+            id: `spg-fallback-${i + 1}`,
+            name: `SPG/B ${i + 1}`
+          }));
+          setSpgList(defaultSpgs);
+        }
+      } catch (error) {
+        console.error("Gagal memuat SPG", error);
+      }
+    };
+
     fetchSettings();
+    fetchSpgList();
     return () => unsubscribe();
   }, [router]);
 
@@ -205,7 +235,6 @@ export default function KasirPage() {
       setSelectedPackage(item);
       const initSelections: Record<string, number> = {};
       
-      // Auto-fill jika tipe aturan FIX
       item.allowedVariants?.forEach(v => { 
         if (v.ruleType === "fix") {
           initSelections[v.id] = v.qtyValue || 0;
@@ -388,6 +417,7 @@ export default function KasirPage() {
       items: cart,
       subTotal, discount: actualDiscount, tax, total, 
       paymentMethod, cashReceived: paymentMethod === "Tunai" ? cashReceived : total, change,
+      spg: selectedSpg || "-", // Menyimpan "-" jika kasir tidak memilih SPG
       kasir: cashierName, dateString: new Date().toLocaleString("id-ID")
     };
 
@@ -418,7 +448,7 @@ export default function KasirPage() {
 
         await addDoc(collection(db, "activity_logs"), {
           user: cashierName, role: "kasir", action: "Membuat Transaksi Baru",
-          details: `ID Struk: ${currentTrxId} | Total: Rp ${total}`, timestamp: serverTimestamp()
+          details: `ID Struk: ${currentTrxId} | Total: Rp ${total} | SPG: ${selectedSpg || "-"}`, timestamp: serverTimestamp()
         });
         setLastTransaction({ ...txData, id: docRef.id });
       } else {
@@ -431,6 +461,7 @@ export default function KasirPage() {
         setLastTransaction({ ...offlineRecord, id: currentTrxId }); 
       }
       setIsPaymentModalOpen(false);
+      setCheckoutStep(1); // reset step
       setIsMobileCartOpen(false); 
       setIsSuccessModalOpen(true);
     } catch (error) {
@@ -441,8 +472,13 @@ export default function KasirPage() {
   };
 
   const handleFinishTransaction = async () => {
-    setCart([]); setCashReceived(0); setPaymentMethod("Tunai");
-    setIsSuccessModalOpen(false); setLastTransaction(null);
+    setCart([]); 
+    setCashReceived(0); 
+    setPaymentMethod("Tunai");
+    setSelectedSpg("");
+    setCheckoutStep(1);
+    setIsSuccessModalOpen(false); 
+    setLastTransaction(null);
     if (isOnline) fetchCatalog();
   };
 
@@ -500,15 +536,18 @@ export default function KasirPage() {
   };
 
   return (
-    <div className="flex h-screen bg-zinc-100 overflow-hidden font-sans selection:bg-blue-200 relative">
+    <div className="flex h-screen bg-zinc-200 p-2 sm:p-4 gap-3 sm:gap-4 overflow-hidden font-sans selection:bg-blue-200 relative">
 
       {/* ================= AREA KIRI (Katalog) ================= */}
-      <div className="flex-1 flex flex-col no-print w-full lg:w-auto">
-        <header className="bg-slate-900 shadow-md px-4 sm:px-6 py-4 flex justify-between items-center z-10 text-white">
+      <div className="flex-1 flex flex-col gap-3 sm:gap-4 min-w-0 no-print h-full">
+        
+        <header className="bg-slate-900 shadow-md rounded-2xl px-4 sm:px-6 py-4 flex justify-between items-center text-white shrink-0">
           <div className="flex items-center gap-2 sm:gap-4">
             <div>
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight">TELEMEDIA.ID</h1>
-              <p className="text-xs text-slate-400 mt-1 font-medium hidden sm:block">Kasir Aktif: <span className="text-white font-bold uppercase">{cashierName}</span></p>
+              <p className="text-xs text-slate-400 mt-1 font-medium hidden sm:block">
+                Kasir Aktif: <span className="text-white font-bold uppercase">{cashierName}</span>
+              </p>
             </div>
             
             <div className="flex items-center ml-2">
@@ -529,12 +568,12 @@ export default function KasirPage() {
             </div>
           </div>
 
-          <button onClick={handleLogoutClick} className="px-3 py-2 text-xs sm:text-sm font-semibold text-white bg-red-600/80 rounded-lg hover:bg-red-600 transition-colors">
+          <button onClick={handleLogoutClick} className="px-3 py-2 text-xs sm:text-sm font-semibold text-white bg-red-600/80 rounded-xl hover:bg-red-600 transition-colors">
             Keluar
           </button>
         </header>
 
-        <div className="px-4 sm:px-6 py-3 bg-white border-b flex gap-2 sm:gap-3 overflow-x-auto no-scrollbar shadow-sm z-0">
+        <div className="px-4 sm:px-6 py-3 bg-white rounded-2xl border border-zinc-200 shadow-sm flex gap-2 sm:gap-3 overflow-x-auto no-scrollbar shrink-0">
           {categories.map((cat) => (
             <button key={cat} onClick={() => setActiveCategory(cat)}
               className={`px-4 py-2 sm:px-5 sm:py-2.5 rounded-full whitespace-nowrap text-xs sm:text-sm font-bold transition-all ${
@@ -546,7 +585,7 @@ export default function KasirPage() {
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-24 lg:pb-6">
+        <div className="flex-1 overflow-y-auto no-scrollbar pb-24 lg:pb-2">
           {loading ? (
             <div className="flex justify-center items-center h-full text-zinc-500 font-medium">Memuat Menu...</div>
           ) : (
@@ -615,9 +654,9 @@ export default function KasirPage() {
         />
       )}
 
-      {/* ================= AREA KANAN (Keranjang) ================= */}
-      <div className={`fixed inset-y-0 right-0 z-50 w-full sm:w-[420px] bg-slate-900 flex flex-col shadow-2xl no-print text-white border-l border-slate-800 transition-transform duration-300 transform lg:relative lg:translate-x-0 ${isMobileCartOpen ? "translate-x-0" : "translate-x-full"}`}>
-        <div className="px-6 py-5 border-b border-slate-800 flex justify-between items-start bg-slate-900">
+      {/* ================= AREA KANAN (Keranjang Card) ================= */}
+      <div className={`fixed inset-y-0 right-0 z-50 w-full sm:w-[420px] bg-slate-900 flex flex-col shadow-2xl no-print text-white transition-transform duration-300 transform lg:relative lg:translate-x-0 lg:rounded-3xl lg:overflow-hidden ${isMobileCartOpen ? "translate-x-0" : "translate-x-full"}`}>
+        <div className="px-6 py-5 border-b border-slate-800 flex justify-between items-start shrink-0">
           <div>
             <h2 className="text-lg font-extrabold text-white">Pesanan Saat Ini</h2>
             {currentTrxId && <p className="text-xs font-mono font-medium text-slate-400 mt-1">ID: {currentTrxId}</p>}
@@ -641,7 +680,6 @@ export default function KasirPage() {
                   <div className="flex flex-col max-w-[65%]">
                     <span className="font-bold text-slate-100 text-sm">{item.name}</span>
                     
-                    {/* Tampilkan Varian Jika Paket */}
                     {item.type === "package" && item.selectedVariants && (
                       <div className="mt-1 flex flex-col gap-0.5">
                         {item.selectedVariants.map((v, i) => (
@@ -652,7 +690,6 @@ export default function KasirPage() {
                       </div>
                     )}
                     
-                    {/* Tampilkan Merchandise di Keranjang */}
                     {item.type === "package" && item.merchandises && item.merchandises.length > 0 && (
                       <div className="mt-2 flex flex-col gap-0.5 pt-1 border-t border-slate-700/50">
                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">🎁 Hadiah:</span>
@@ -688,7 +725,7 @@ export default function KasirPage() {
           )}
         </div>
 
-        <div className="p-6 bg-slate-900 border-t border-slate-800 shadow-[0_-10px_20px_rgba(0,0,0,0.3)]">
+        <div className="p-6 bg-slate-900 border-t border-slate-800 shadow-[0_-10px_20px_rgba(0,0,0,0.3)] shrink-0">
           <div className="space-y-2 mb-5">
             <div className="flex justify-between text-slate-400 text-sm font-medium"><span>Subtotal</span><span>{formatRupiah(subTotal)}</span></div>
             {actualDiscount > 0 && (
@@ -701,11 +738,15 @@ export default function KasirPage() {
             </div>
           </div>
           <button
-            onClick={() => { setCashReceived(total); setIsPaymentModalOpen(true); }}
+            onClick={() => { 
+              setCashReceived(total); 
+              setIsPaymentModalOpen(true); 
+              setCheckoutStep(1); // Set step 1 tiap kali modal dibuka
+            }}
             disabled={cart.length === 0}
             className="w-full py-4 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-bold rounded-xl text-lg shadow-lg disabled:opacity-50 transition-all"
           >
-            Lanjut Pembayaran
+            Proses Pembayaran
           </button>
         </div>
       </div>
@@ -833,61 +874,120 @@ export default function KasirPage() {
         </div>
       )}
 
-      {/* ================= MODAL PEMBAYARAN ================= */}
+      {/* ================= MODAL PEMBAYARAN MULTI-STEP ================= */}
       {isPaymentModalOpen && (
         <div className="fixed inset-0 bg-slate-900/80 z-[200] flex items-center justify-center p-4 backdrop-blur-sm no-print">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+            
             <div className="p-6 bg-slate-900 text-white text-center relative shrink-0">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Total Tagihan</h3>
-              <div className="text-3xl sm:text-4xl font-extrabold text-blue-400">{formatRupiah(total)}</div>
+              {checkoutStep === 1 ? (
+                <>
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Total Tagihan</h3>
+                  <div className="text-3xl sm:text-4xl font-extrabold text-blue-400">{formatRupiah(total)}</div>
+                </>
+              ) : (
+                <h3 className="text-lg sm:text-xl font-extrabold text-white uppercase tracking-widest">
+                  PILIH SALES PROMOTION
+                </h3>
+              )}
             </div>
 
             <div className="p-4 sm:p-6 flex-1 overflow-y-auto">
-              <h4 className="font-bold text-zinc-800 mb-3 text-sm uppercase tracking-wider">Metode Pembayaran</h4>
-              <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-6">
-                {["Tunai", "QRIS", "Kartu"].map((method) => (
-                  <button key={method} onClick={() => setPaymentMethod(method as any)}
-                    className={`py-2 sm:py-3 rounded-xl text-sm sm:text-base font-bold border-2 transition-all ${paymentMethod === method ? "border-blue-600 bg-blue-50 text-blue-700" : "border-zinc-200 text-zinc-500"}`}
-                  >
-                    {method}
-                  </button>
-                ))}
-              </div>
+              {/* --- STEP 1: PEMBAYARAN --- */}
+              {checkoutStep === 1 && (
+                <>
+                  <h4 className="font-bold text-zinc-800 mb-3 text-sm uppercase tracking-wider">Metode Pembayaran</h4>
+                  <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-6">
+                    {["Tunai", "QRIS", "Kartu"].map((method) => (
+                      <button key={method} onClick={() => setPaymentMethod(method as any)}
+                        className={`py-2 sm:py-3 rounded-xl text-sm sm:text-base font-bold border-2 transition-all ${paymentMethod === method ? "border-blue-600 bg-blue-50 text-blue-700" : "border-zinc-200 text-zinc-500"}`}
+                      >
+                        {method}
+                      </button>
+                    ))}
+                  </div>
 
-              {paymentMethod === "Tunai" && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Uang Diterima</label>
-                    <input
-                      type="number" value={cashReceived || ""} onChange={(e) => setCashReceived(Number(e.target.value))}
-                      className="w-full text-2xl sm:text-3xl font-extrabold px-4 py-3 bg-zinc-50 border border-zinc-300 rounded-xl text-zinc-900 focus:outline-none focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
-                  </div>
-                  <div className="grid grid-cols-4 gap-2">
-                    <button onClick={() => setCashReceived(total)} className="py-2 bg-zinc-100 hover:bg-zinc-200 rounded-lg text-[10px] sm:text-sm font-bold text-zinc-700">Pas</button>
-                    <button onClick={() => setCashReceived(20000)} className="py-2 bg-zinc-100 hover:bg-zinc-200 rounded-lg text-[10px] sm:text-sm font-bold text-zinc-700">20rb</button>
-                    <button onClick={() => setCashReceived(50000)} className="py-2 bg-zinc-100 hover:bg-zinc-200 rounded-lg text-[10px] sm:text-sm font-bold text-zinc-700">50rb</button>
-                    <button onClick={() => setCashReceived(100000)} className="py-2 bg-zinc-100 hover:bg-zinc-200 rounded-lg text-[10px] sm:text-sm font-bold text-zinc-700">100rb</button>
-                  </div>
-                  <div className="flex justify-between items-center p-3 sm:p-4 bg-zinc-100 rounded-xl mt-4">
-                    <span className="font-bold text-zinc-600 text-sm sm:text-base">Kembalian</span>
-                    <span className={`font-extrabold text-lg sm:text-xl ${change < 0 ? 'text-red-500' : 'text-zinc-900'}`}>
-                      {change < 0 ? "Kurang" : formatRupiah(change)}
-                    </span>
+                  {paymentMethod === "Tunai" && (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Uang Diterima</label>
+                        <input
+                          type="number" value={cashReceived || ""} onChange={(e) => setCashReceived(Number(e.target.value))}
+                          className="w-full text-2xl sm:text-3xl font-extrabold px-4 py-3 bg-zinc-50 border border-zinc-300 rounded-xl text-zinc-900 focus:outline-none focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                      </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        <button onClick={() => setCashReceived(total)} className="py-2 bg-zinc-100 hover:bg-zinc-200 rounded-lg text-[10px] sm:text-sm font-bold text-zinc-700">Pas</button>
+                        <button onClick={() => setCashReceived(20000)} className="py-2 bg-zinc-100 hover:bg-zinc-200 rounded-lg text-[10px] sm:text-sm font-bold text-zinc-700">20rb</button>
+                        <button onClick={() => setCashReceived(50000)} className="py-2 bg-zinc-100 hover:bg-zinc-200 rounded-lg text-[10px] sm:text-sm font-bold text-zinc-700">50rb</button>
+                        <button onClick={() => setCashReceived(100000)} className="py-2 bg-zinc-100 hover:bg-zinc-200 rounded-lg text-[10px] sm:text-sm font-bold text-zinc-700">100rb</button>
+                      </div>
+                      <div className="flex justify-between items-center p-3 sm:p-4 bg-zinc-100 rounded-xl mt-4">
+                        <span className="font-bold text-zinc-600 text-sm sm:text-base">Kembalian</span>
+                        <span className={`font-extrabold text-lg sm:text-xl ${change < 0 ? 'text-red-500' : 'text-zinc-900'}`}>
+                          {change < 0 ? "Kurang" : formatRupiah(change)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* --- STEP 2: PILIH SPG --- */}
+              {checkoutStep === 2 && (
+                <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                  <p className="text-zinc-500 text-xs text-center mb-4">Pilih SPG/B terkait atau lewati jika tidak ada.</p>
+                  
+                  {/* Grid 3 kolom */}
+                  <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                    {spgList.map((spg) => (
+                      <button
+                        key={spg.id}
+                        onClick={() => setSelectedSpg(spg.name)}
+                        className={`py-3 px-1 rounded-xl text-[11px] sm:text-xs font-bold border-2 transition-all flex items-center justify-center text-center h-12 sm:h-14 ${
+                          selectedSpg === spg.name
+                            ? "border-blue-600 bg-blue-50 text-blue-700 shadow-md"
+                            : "border-zinc-200 text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50"
+                        }`}
+                      >
+                        {spg.name}
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
             </div>
 
             <div className="p-4 border-t border-zinc-200 flex gap-3 shrink-0">
-              <button onClick={() => setIsPaymentModalOpen(false)} className="flex-1 py-3 sm:py-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold rounded-xl transition-all">
-                Batal
-              </button>
-              <button onClick={handleCheckout} disabled={isProcessing || (paymentMethod === "Tunai" && cashReceived < total)}
-                className="flex-1 py-3 sm:py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold rounded-xl transition-all"
-              >
-                {isProcessing ? "Proses..." : "Bayar"}
-              </button>
+              {checkoutStep === 1 ? (
+                <>
+                  <button onClick={() => setIsPaymentModalOpen(false)} className="flex-1 py-3 sm:py-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold rounded-xl transition-all">
+                    Batal
+                  </button>
+                  <button 
+                    onClick={() => setCheckoutStep(2)} 
+                    disabled={paymentMethod === "Tunai" && cashReceived < total}
+                    className="flex-1 py-3 sm:py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2"
+                  >
+                    Lanjut
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => setCheckoutStep(1)} className="flex-1 py-3 sm:py-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold rounded-xl transition-all flex items-center justify-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                    Kembali
+                  </button>
+                  <button 
+                    onClick={handleCheckout} 
+                    disabled={isProcessing}
+                    className="flex-1 py-3 sm:py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all"
+                  >
+                    {isProcessing ? "Proses..." : "Selesaikan & Bayar"}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

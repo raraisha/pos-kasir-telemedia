@@ -64,6 +64,7 @@ export default function Sidebar({ adminName, userRole = "admin", onLogout }: Sid
     { path: "/dashboard", icon: "📊", label: "Ringkasan", allowedRoles: ["admin", "viewer"] },
     { path: "/dashboard/products", icon: "📦", label: "Kelola Produk", allowedRoles: ["admin"] },
     { path: "/dashboard/cashiers", icon: "👥", label: "Kelola Pengguna", allowedRoles: ["admin"] },
+    { path : "/dashboard/spg", icon: "🧑‍🤝‍🧑", label: "Kelola SPG", allowedRoles: ["admin"] },
     { path: "/dashboard/merchandise", icon: "🎁", label: "Kelola Merchandise", allowedRoles: ["admin"] },
     { path: "/dashboard/packages", icon: "🍱", label: "Kelola Paket", allowedRoles: ["admin"] },
     { path: "/dashboard/transactions", icon: "📈", label: "Transaksi", allowedRoles: ["admin"] },
